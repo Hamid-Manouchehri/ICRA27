@@ -8,6 +8,8 @@ Inputs:
 Outputs:
     Optional UR5e Cartesian velocity command [vx, vy, 0, 0, 0, 0].
     CSV log with planar force, position, velocity, and fixed admittance data.
+    Optional CoppeliaSim end-effector position trajectory through a separate
+    Python process using the ZeroMQ Remote API.
 
 Controller:
     Fixed planar admittance for each axis:
@@ -22,13 +24,17 @@ User-adjustable parameters:
     robot, startup, and logging settings are also user-adjustable there.
 
 Dependency:
-    pip install --user ur_rtde
+    pip install --user ur_rtde coppeliasim-zmqremoteapi-client
 """
 
 import csv
 import math
+import multiprocessing
+from pathlib import Path
+import queue
 import signal
 import time
+import traceback
 
 try:
     import rtde_control
@@ -40,8 +46,13 @@ except ImportError:
 
 # -------------------- User Settings --------------------
 robot_ip = "192.168.1.100"  # TODO UR5e IP/hostname [valid robot address]
-write_data_csv_path = "../data/raw_data/ur5e_fixed_adm_2d_log.csv"
-# TODO output CSV path [file path]; keep raw data in data/raw_data.
+write_data_csv_path = (
+    Path(__file__).resolve().parent.parent /
+    "data" /
+    "raw_data" /
+    "ur5e_fixed_adm_2d_log.csv"
+)
+# TODO output CSV path [file path]; resolved from this script, not cwd.
 
 send_robot_commands = True  # TODO bool; use True only after checking signs
 
@@ -81,6 +92,28 @@ max_runtime_seconds = 120  # TODO automatic stop time [s], must be positive
 # TODO set signs so positive push directions produce positive base-frame motion.
 force_sign_x = 1.0  # TODO x sign [unitless], valid values: -1 or +1
 force_sign_y = 1.0  # TODO y sign [unitless], valid values: -1 or +1
+
+# CoppeliaSim trajectory bridge. It runs in a separate process and never
+# blocks the RTDE control loop. The C++ code uses a 40 ms simulator update.
+send_coppeliasim_trajectory = True  # TODO bool; requires CoppeliaSim running
+coppeliasim_host = "127.0.0.1"  # TODO ZeroMQ host [hostname or IPv4 address]
+coppeliasim_port = 23000  # TODO ZeroMQ port [integer], default is 23000
+coppeliasim_object_path = "/Sphere"  # TODO exact marker path in scene tree
+coppeliasim_reference_object_path = ""  # TODO empty string means world frame
+coppeliasim_update_frequency = 25.0  # TODO simulator update [Hz], recommended 25
+
+# Match scripts/admittance_pb_velMode.cpp:
+# CoppeliaSim x = -robot y, CoppeliaSim y = robot x, CoppeliaSim z = robot z.
+coppeliasim_position_offset = [  # TODO world-frame offset [m]
+    0.0,
+    0.0,
+    0.0,
+]
+coppeliasim_position_signs = [  # TODO axis signs [unitless], each is -1 or +1
+    -1.0,
+    1.0,
+    1.0,
+]
 
 
 # -------------------- Controller State --------------------
@@ -159,12 +192,217 @@ def read_tcp_force_xy(rtde_receive_interface):
 def read_tcp_position_xy(rtde_receive_interface):
     """Read base-frame TCP position [x, y] in m from the UR5e."""
 
+    tcp_position_xyz = read_tcp_position_xyz(rtde_receive_interface)
+
+    return [
+        tcp_position_xyz[0],
+        tcp_position_xyz[1],
+    ]
+
+
+def read_tcp_position_xyz(rtde_receive_interface):
+    """Read base-frame TCP position [x, y, z] in m from the UR5e."""
+
     tcp_pose = rtde_receive_interface.getActualTCPPose()
 
     return [
         tcp_pose[0],
         tcp_pose[1],
+        tcp_pose[2],
     ]
+
+
+def map_tcp_position_to_coppeliasim(tcp_position_xyz):
+    """Map UR5e base-frame position [m] to the CoppeliaSim frame [m]."""
+
+    return [
+        coppeliasim_position_offset[0] +
+        coppeliasim_position_signs[0] * tcp_position_xyz[1],
+        coppeliasim_position_offset[1] +
+        coppeliasim_position_signs[1] * tcp_position_xyz[0],
+        coppeliasim_position_offset[2] +
+        coppeliasim_position_signs[2] * tcp_position_xyz[2],
+    ]
+
+
+def coppeliasim_trajectory_process(trajectory_queue, stop_event):
+    """Send the latest TCP position to CoppeliaSim from a child process.
+
+    Input:
+        trajectory_queue: multiprocessing queue containing
+            (controller_time_s, tcp_position_xyz_m) samples.
+        stop_event: multiprocessing event set by the robot process at exit.
+
+    Output:
+        The configured CoppeliaSim object receives setObjectPosition() calls.
+
+    Assumptions:
+        CoppeliaSim is already running with its ZeroMQ Remote API service
+        enabled. Simulator communication errors terminate only this child.
+    """
+
+    try:
+        from coppeliasim_zmqremoteapi_client import RemoteAPIClient
+    except ImportError as error:
+        print(
+            "CoppeliaSim bridge disabled: cannot import ZeroMQ client:",
+            error,
+            flush=True,
+        )
+        return
+
+    try:
+        print(
+            "CoppeliaSim bridge connecting to",
+            coppeliasim_host,
+            "port",
+            coppeliasim_port,
+            flush=True,
+        )
+        client = RemoteAPIClient(
+            host=coppeliasim_host,
+            port=coppeliasim_port,
+        )
+        sim = client.require("sim")
+        target_object_handle = sim.getObject(coppeliasim_object_path)
+
+        reference_object_handle = -1
+        if coppeliasim_reference_object_path:
+            reference_object_handle = sim.getObject(
+                coppeliasim_reference_object_path
+            )
+
+        print(
+            "CoppeliaSim bridge found target",
+            coppeliasim_object_path,
+            "with handle",
+            target_object_handle,
+            flush=True,
+        )
+
+        update_period_s = 1.0 / coppeliasim_update_frequency
+        next_update_time = 0.0
+        sent_sample_count = 0
+
+        print(
+            "CoppeliaSim bridge connected; updating",
+            coppeliasim_object_path,
+            "at",
+            coppeliasim_update_frequency,
+            "Hz",
+        )
+
+        while not stop_event.is_set():
+            try:
+                trajectory_sample = trajectory_queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+
+            # Discard stale samples so simulator lag cannot build a backlog.
+            while True:
+                try:
+                    trajectory_sample = trajectory_queue.get_nowait()
+                except queue.Empty:
+                    break
+
+            current_time = time.monotonic()
+            if current_time < next_update_time:
+                continue
+
+            tcp_position_xyz = trajectory_sample[1]
+            coppeliasim_position = map_tcp_position_to_coppeliasim(
+                tcp_position_xyz
+            )
+
+            # Non-stepping mode: this process updates the object only. It does
+            # not start, stop, or step the CoppeliaSim simulation.
+            sim.setObjectPosition(
+                target_object_handle,
+                reference_object_handle,
+                coppeliasim_position,
+            )
+
+            if sent_sample_count == 0:
+                print(
+                    "CoppeliaSim first marker position:",
+                    coppeliasim_position,
+                    flush=True,
+                )
+            sent_sample_count += 1
+
+            next_update_time = current_time + update_period_s
+
+    except Exception as error:
+        print("CoppeliaSim bridge stopped:", repr(error), flush=True)
+        traceback.print_exc()
+
+
+def start_coppeliasim_trajectory_process():
+    """Start the independent CoppeliaSim trajectory process if enabled."""
+
+    if not send_coppeliasim_trajectory:
+        return None, None, None
+
+    process_context = multiprocessing.get_context("spawn")
+    trajectory_queue = process_context.Queue(maxsize=1)
+    stop_event = process_context.Event()
+    trajectory_process = process_context.Process(
+        target=coppeliasim_trajectory_process,
+        args=(trajectory_queue, stop_event),
+        name="coppeliasim_trajectory_process",
+    )
+    trajectory_process.start()
+
+    print(
+        "Started CoppeliaSim bridge process with PID",
+        trajectory_process.pid,
+        flush=True,
+    )
+
+    return trajectory_queue, stop_event, trajectory_process
+
+
+def publish_coppeliasim_trajectory_sample(
+    trajectory_queue,
+    time_s,
+    tcp_position_xyz,
+):
+    """Enqueue only the newest TCP position without blocking robot control."""
+
+    if trajectory_queue is None:
+        return
+
+    try:
+        while True:
+            trajectory_queue.get_nowait()
+    except queue.Empty:
+        pass
+
+    try:
+        trajectory_queue.put_nowait((time_s, list(tcp_position_xyz)))
+    except queue.Full:
+        # The child process is consuming the queue. A later sample will retry.
+        pass
+
+
+def stop_coppeliasim_trajectory_process(
+    trajectory_queue,
+    stop_event,
+    trajectory_process,
+):
+    """Stop and release the independent CoppeliaSim trajectory process."""
+
+    if trajectory_process is None:
+        return
+
+    stop_event.set()
+    trajectory_process.join(timeout=2.0)
+
+    if trajectory_process.is_alive():
+        trajectory_process.terminate()
+        trajectory_process.join()
+
+    trajectory_queue.close()
 
 
 def estimate_force_bias(rtde_receive_interface):
@@ -292,6 +530,10 @@ def write_csv_header(csv_writer):
         "Fy_filt_N",
         "x_m",
         "y_m",
+        "z_m",
+        "coppeliasim_x_m",
+        "coppeliasim_y_m",
+        "coppeliasim_z_m",
         "vx_cmd_m_s",
         "vy_cmd_m_s",
         "speed_cmd_m_s",
@@ -306,6 +548,8 @@ def write_csv_header(csv_writer):
 def write_csv_row(csv_writer, time_s, tcp_position):
     """Write one planar controller sample to the CSV file."""
 
+    coppeliasim_position = map_tcp_position_to_coppeliasim(tcp_position)
+
     csv_writer.writerow([
         time_s,
         force_raw[0],
@@ -314,6 +558,10 @@ def write_csv_row(csv_writer, time_s, tcp_position):
         force_filtered[1],
         tcp_position[0],
         tcp_position[1],
+        tcp_position[2],
+        coppeliasim_position[0],
+        coppeliasim_position[1],
+        coppeliasim_position[2],
         cart_velocity[0],
         cart_velocity[1],
         vec2_norm(cart_velocity),
@@ -347,43 +595,70 @@ def main():
 
     start_position = read_tcp_position_xy(rtde_receive_interface)
 
+    (
+        trajectory_queue,
+        simulator_stop_event,
+        trajectory_process,
+    ) = start_coppeliasim_trajectory_process()
+
     print("Controller started. Press Ctrl+C to stop.")
     print("send_robot_commands =", send_robot_commands)
     print("M_inertia_x/y [kg] =", M_inertia_x, M_inertia_y)
     print("B_damping_x/y [Ns/m] =", B_damping_x, B_damping_y)
 
-    with open(write_data_csv_path, "w", newline="") as csv_file:
-        csv_writer = csv.writer(csv_file)
-        write_csv_header(csv_writer)
+    try:
+        with open(write_data_csv_path, "w", newline="") as csv_file:
+            csv_writer = csv.writer(csv_file)
+            write_csv_header(csv_writer)
 
-        max_steps = int(max_runtime_seconds / dt)
+            max_steps = int(max_runtime_seconds / dt)
 
-        for step_idx in range(max_steps):
-            if not keep_running:
-                break
+            for step_idx in range(max_steps):
+                if not keep_running:
+                    break
 
-            period_start = rtde_control_interface.initPeriod()
+                period_start = rtde_control_interface.initPeriod()
 
-            tcp_position = read_tcp_position_xy(rtde_receive_interface)
+                tcp_position_xyz = read_tcp_position_xyz(
+                    rtde_receive_interface
+                )
+                tcp_position_xy = [
+                    tcp_position_xyz[0],
+                    tcp_position_xyz[1],
+                ]
 
-            update_force_filter(rtde_receive_interface)
-            integrate_fixed_admittance()
-            apply_workspace_limit(tcp_position)
-            send_speed_command(rtde_control_interface)
+                update_force_filter(rtde_receive_interface)
+                integrate_fixed_admittance()
+                apply_workspace_limit(tcp_position_xy)
+                send_speed_command(rtde_control_interface)
 
-            time_s = step_idx * dt
-            write_csv_row(csv_writer, time_s, tcp_position)
+                time_s = step_idx * dt
+                write_csv_row(csv_writer, time_s, tcp_position_xyz)
 
-            rtde_control_interface.waitPeriod(period_start)
+                # Queue-only operation: no CoppeliaSim API call occurs here.
+                publish_coppeliasim_trajectory_sample(
+                    trajectory_queue,
+                    time_s,
+                    tcp_position_xyz,
+                )
 
-    if send_robot_commands:
-        rtde_control_interface.speedStop(speed_stop_deceleration)
+                rtde_control_interface.waitPeriod(period_start)
+    finally:
+        stop_coppeliasim_trajectory_process(
+            trajectory_queue,
+            simulator_stop_event,
+            trajectory_process,
+        )
 
-    rtde_control_interface.stopScript()
+        if send_robot_commands:
+            rtde_control_interface.speedStop(speed_stop_deceleration)
+
+        rtde_control_interface.stopScript()
 
     print("Stopped UR5e fixed planar admittance controller.")
     print("CSV saved to:", write_data_csv_path)
 
 
 if __name__ == "__main__":
+    multiprocessing.freeze_support()
     main()
