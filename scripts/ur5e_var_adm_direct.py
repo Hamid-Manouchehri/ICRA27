@@ -41,7 +41,7 @@ except ImportError:
 
 # -------------------- User Settings --------------------
 robot_ip = "192.168.1.100"  # TODO UR5e IP address
-write_data_csv_path = "ur5e_var_adm_direct_log.csv"  # TODO output CSV
+write_data_csv_path = "../data/raw_data/ur5e_var_adm_direct_log.csv"  # TODO output CSV
 
 send_robot_commands = True  # TODO set True only after checking signs
 
