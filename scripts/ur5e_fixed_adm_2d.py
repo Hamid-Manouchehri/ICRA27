@@ -110,8 +110,8 @@ coppeliasim_position_offset = [  # TODO world-frame offset [m]
     0.0,
 ]
 coppeliasim_position_signs = [  # TODO axis signs [unitless], each is -1 or +1
-    -1.0,
     1.0,
+    -1.0,
     1.0,
 ]
 
@@ -217,9 +217,9 @@ def map_tcp_position_to_coppeliasim(tcp_position_xyz):
 
     return [
         coppeliasim_position_offset[0] +
-        coppeliasim_position_signs[0] * tcp_position_xyz[1],
+        coppeliasim_position_signs[0] * tcp_position_xyz[1] + 0.542,
         coppeliasim_position_offset[1] +
-        coppeliasim_position_signs[1] * tcp_position_xyz[0],
+        coppeliasim_position_signs[1] * tcp_position_xyz[0] - 0.088,
         coppeliasim_position_offset[2] +
         coppeliasim_position_signs[2] * tcp_position_xyz[2],
     ]

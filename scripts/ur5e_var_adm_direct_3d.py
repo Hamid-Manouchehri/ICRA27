@@ -30,6 +30,7 @@ import csv
 import math
 import signal
 import time
+from pathlib import Path
 
 try:
     import rtde_control
@@ -41,7 +42,14 @@ except ImportError:
 
 # -------------------- User Settings --------------------
 robot_ip = "192.168.1.100"  # TODO UR5e IP address
-write_data_csv_path = "../data/raw_data/ur5e_var_adm_direct_log.csv"  # TODO output CSV
+
+write_data_csv_path = (
+    Path(__file__).resolve().parent.parent /
+    "data" /
+    "raw_data" /
+    "ur5e_var_adm_direct_3d_log.csv"
+)
+# TODO output CSV path [file path]; resolved from this script, not cwd.
 
 send_robot_commands = True  # TODO set True only after checking signs
 
