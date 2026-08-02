@@ -53,14 +53,14 @@ write_data_csv_path = (
     Path(__file__).resolve().parent.parent /
     "data" /
     "raw_data" /
-    "ur5e_fixed_adm_2d_log_test1.csv"
+    "ur5e_fixed_adm_2d_log_test6.csv"
 )
 # TODO output CSV path [file path]; resolved from this script, not cwd.
 tobii_data_csv_path = (
     Path(__file__).resolve().parent.parent /
     "data" /
     "raw_data" /
-    "ur5e_fixed_adm_2d_tobii_log_test1.csv"
+    "ur5e_fixed_adm_2d_tobii_log_test6.csv"
 )
 # TODO Tobii output CSV path [file path]; one row per Tobii callback sample.
 
@@ -101,6 +101,8 @@ max_displacement_from_start = 0.25  # TODO planar radius [m], must be positive
 
 force_bias_samples = 250  # TODO unloaded samples [count], recommended >= 100
 max_runtime_seconds = 120  # TODO automatic stop time [s], must be positive
+# TODO subject preparation delay before control/recording [s], valid >= 0.
+subject_preparation_time_s = 5.0
 
 # TODO set signs so positive push directions produce positive base-frame motion.
 force_sign_x = 1.0  # TODO x sign [unitless], valid values: -1 or +1
@@ -766,6 +768,13 @@ def main():
     estimate_force_bias(rtde_receive_interface)
 
     start_position = read_tcp_position_xy(rtde_receive_interface)
+
+    print(
+        "Subject preparation: control and recording start in",
+        subject_preparation_time_s,
+        "seconds."
+    )
+    time.sleep(subject_preparation_time_s)
 
     (
         trajectory_queue,
