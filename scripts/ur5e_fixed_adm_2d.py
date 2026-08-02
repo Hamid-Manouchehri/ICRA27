@@ -8,6 +8,7 @@ Inputs:
 Outputs:
     Optional UR5e Cartesian velocity command [vx, vy, 0, 0, 0, 0].
     CSV log with planar force, position, velocity, and fixed admittance data.
+    Tobii gaze CSV containing every field returned by the SDK callback.
     Optional CoppeliaSim end-effector position trajectory through a separate
     Python process using the ZeroMQ Remote API.
 
@@ -24,15 +25,17 @@ User-adjustable parameters:
     robot, startup, and logging settings are also user-adjustable there.
 
 Dependency:
-    pip install --user ur_rtde coppeliasim-zmqremoteapi-client
+    pip install --user ur_rtde tobii-research coppeliasim-zmqremoteapi-client
 """
 
 import csv
+import json
 import math
 import multiprocessing
 from pathlib import Path
 import queue
 import signal
+import threading
 import time
 import traceback
 
@@ -50,9 +53,19 @@ write_data_csv_path = (
     Path(__file__).resolve().parent.parent /
     "data" /
     "raw_data" /
-    "ur5e_fixed_adm_2d_log.csv"
+    "ur5e_fixed_adm_2d_log_test1.csv"
 )
 # TODO output CSV path [file path]; resolved from this script, not cwd.
+tobii_data_csv_path = (
+    Path(__file__).resolve().parent.parent /
+    "data" /
+    "raw_data" /
+    "ur5e_fixed_adm_2d_tobii_log_test1.csv"
+)
+# TODO Tobii output CSV path [file path]; one row per Tobii callback sample.
+
+enable_tobii_recording = True  # TODO bool; requires a connected Tobii tracker
+tobii_queue_size = 50000  # TODO callback buffer [samples], recommended >= 10000
 
 send_robot_commands = True  # TODO bool; use True only after checking signs
 
@@ -110,7 +123,7 @@ coppeliasim_position_offset = [  # TODO world-frame offset [m]
     0.0,
 ]
 coppeliasim_position_signs = [  # TODO axis signs [unitless], each is -1 or +1
-    1.0,
+    -1.0,
     -1.0,
     1.0,
 ]
@@ -217,9 +230,9 @@ def map_tcp_position_to_coppeliasim(tcp_position_xyz):
 
     return [
         coppeliasim_position_offset[0] +
-        coppeliasim_position_signs[0] * tcp_position_xyz[1] + 0.542,
+        coppeliasim_position_signs[0] * tcp_position_xyz[0] - 0.087,
         coppeliasim_position_offset[1] +
-        coppeliasim_position_signs[1] * tcp_position_xyz[0] - 0.088,
+        coppeliasim_position_signs[1] * tcp_position_xyz[1] - 0.54,
         coppeliasim_position_offset[2] +
         coppeliasim_position_signs[2] * tcp_position_xyz[2],
     ]
@@ -403,6 +416,165 @@ def stop_coppeliasim_trajectory_process(
         trajectory_process.join()
 
     trajectory_queue.close()
+
+
+def make_tobii_json_safe(value):
+    """Convert SDK values into JSON-compatible values without data loss."""
+
+    if isinstance(value, dict):
+        return {
+            str(key): make_tobii_json_safe(item)
+            for key, item in value.items()
+        }
+
+    if isinstance(value, (list, tuple)):
+        return [make_tobii_json_safe(item) for item in value]
+
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+
+    return str(value)
+
+
+def make_tobii_csv_value(value):
+    """Serialize compound SDK values into one CSV cell."""
+
+    if isinstance(value, (dict, list, tuple)):
+        return json.dumps(
+            make_tobii_json_safe(value),
+            separators=(",", ":"),
+        )
+
+    return value
+
+
+def write_tobii_csv(gaze_queue, stop_event):
+    """Write every queued Tobii dictionary field to CSV in a thread."""
+
+    with open(tobii_data_csv_path, "w", newline="") as csv_file:
+        csv_writer = csv.writer(csv_file)
+        csv_field_names = None
+
+        while not stop_event.is_set() or not gaze_queue.empty():
+            try:
+                gaze_sample = gaze_queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+
+            if csv_field_names is None:
+                csv_field_names = sorted(gaze_sample.keys())
+                csv_writer.writerow(csv_field_names + ["sdk_data_json"])
+
+            csv_row = [
+                make_tobii_csv_value(gaze_sample.get(field_name))
+                for field_name in csv_field_names
+            ]
+            csv_row.append(
+                json.dumps(
+                    make_tobii_json_safe(gaze_sample),
+                    separators=(",", ":"),
+                )
+            )
+            csv_writer.writerow(csv_row)
+
+
+def create_tobii_gaze_callback(gaze_queue):
+    """Create a callback that queues the complete SDK dictionary."""
+
+    def gaze_callback(data):
+        """Queue one complete SDK dictionary without file I/O."""
+
+        gaze_sample = dict(data)
+
+        try:
+            gaze_queue.put_nowait(gaze_sample)
+        except queue.Full:
+            # Do not block the Tobii SDK callback if the writer falls behind.
+            pass
+
+    return gaze_callback
+
+
+def start_tobii_recording():
+    """Find a Tobii tracker and start callback acquisition plus CSV writing."""
+
+    if not enable_tobii_recording:
+        print("Tobii recording disabled by user setting.")
+        return None
+
+    try:
+        import tobii_research as tobii_research_api
+    except ImportError:
+        print(
+            "Tobii recording disabled: install with "
+            "`pip install --user tobii-research`"
+        )
+        return None
+
+    trackers = tobii_research_api.find_all_eyetrackers()
+
+    if not trackers:
+        print("No Tobii eye tracker found. Tobii recording disabled.")
+        return None
+
+    tracker = trackers[0]
+    gaze_queue = queue.Queue(maxsize=tobii_queue_size)
+    stop_event = threading.Event()
+    writer_thread = threading.Thread(
+        target=write_tobii_csv,
+        args=(gaze_queue, stop_event),
+        name="tobii_csv_writer",
+        daemon=True,
+    )
+    gaze_callback = create_tobii_gaze_callback(gaze_queue)
+
+    writer_thread.start()
+    tracker.subscribe_to(
+        tobii_research_api.EYETRACKER_GAZE_DATA,
+        gaze_callback,
+        as_dictionary=True,
+    )
+
+    print("Tobii model:", tracker.model)
+    print("Tobii serial:", tracker.serial_number)
+    print(
+        "Tobii frequency:",
+        tracker.get_gaze_output_frequency(),
+        "Hz",
+    )
+    print("Tobii CSV:", tobii_data_csv_path)
+
+    return (
+        tobii_research_api,
+        tracker,
+        gaze_callback,
+        stop_event,
+        writer_thread,
+    )
+
+
+def stop_tobii_recording(tobii_recording):
+    """Unsubscribe from Tobii and flush the remaining gaze queue."""
+
+    if tobii_recording is None:
+        return
+
+    (
+        tobii_research_api,
+        tracker,
+        gaze_callback,
+        stop_event,
+        writer_thread,
+    ) = tobii_recording
+
+    try:
+        tracker.unsubscribe_from(
+            tobii_research_api.EYETRACKER_GAZE_DATA,
+            gaze_callback,
+        )
+    finally:
+        stop_event.set()
+        writer_thread.join(timeout=2.0)
 
 
 def estimate_force_bias(rtde_receive_interface):
@@ -600,6 +772,7 @@ def main():
         simulator_stop_event,
         trajectory_process,
     ) = start_coppeliasim_trajectory_process()
+    tobii_recording = start_tobii_recording()
 
     print("Controller started. Press Ctrl+C to stop.")
     print("send_robot_commands =", send_robot_commands)
@@ -644,6 +817,8 @@ def main():
 
                 rtde_control_interface.waitPeriod(period_start)
     finally:
+        stop_tobii_recording(tobii_recording)
+
         stop_coppeliasim_trajectory_process(
             trajectory_queue,
             simulator_stop_event,
