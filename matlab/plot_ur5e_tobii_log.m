@@ -23,7 +23,7 @@ data_file = fullfile(script_directory, ...
     '..', ...
     'data', ...
     'raw_data', ...
-    'ur5e_fixed_adm_2d_tobii_log_test6.csv');
+    'tobii_fixed_adm_2d_ellipse_s1_d10.csv');
 display_area_margin = 0.05;  % TODO normalized display margin [0, 0.2]
 timestamp_variable = 'system_time_stamp';  % TODO system or device timestamp
 
@@ -132,19 +132,17 @@ fprintf( 'Left/right pupil validity: %.1f%% / %.1f%%\n', ...
     100 * mean(left_pupil_valid), ...
     100 * mean(right_pupil_valid));
 
-%% Figure 1: normalized gaze on the active display
+%% Gaze trajectory on the active display
 figure('Name', 'Tobii normalized display gaze', 'Color', 'w');
-
-subplot(2, 2, 1);
 hold on;
 plot(left_display_plot(:, 1), ...
     left_display_plot(:, 2), ...
     '.', ...
-    'DisplayName', 'Left eye');
+    'DisplayName', 'Left eye-gaze point');
 plot(right_display_plot(:, 1), ...
     right_display_plot(:, 2), ...
     '.', ...
-    'DisplayName', 'Right eye');
+    'DisplayName', 'Right eye-gaze point');
 hRect = rectangle('Position', [0, 0, 1, 1], ...
     'EdgeColor', 'k', ...
     'LineStyle', '--');
@@ -162,7 +160,10 @@ ylabel('Normalized display y');
 title('Gaze trajectory on active display');
 legend('Location', 'best');
 
-subplot(2, 2, 2);
+%% Gaze x-y time profiles
+figure('Name', 'Tobii normalized gaze time profiles', 'Color', 'w');
+
+subplot(2, 1, 1);
 hold on;
 plot(time_s, left_display_plot(:, 1), 'DisplayName', 'Left eye');
 plot(time_s, right_display_plot(:, 1), 'DisplayName', 'Right eye');
@@ -174,7 +175,7 @@ ylabel('Display x [normalized]');
 title('Horizontal gaze position');
 legend('Location', 'best');
 
-subplot(2, 2, 3);
+subplot(2, 1, 2);
 hold on;
 plot(time_s, left_display_plot(:, 2), 'DisplayName', 'Left eye');
 plot(time_s, right_display_plot(:, 2), 'DisplayName', 'Right eye');
@@ -186,20 +187,7 @@ ylabel('Display y [normalized]');
 title('Vertical gaze position');
 legend('Location', 'best');
 
-subplot(2, 2, 4);
-hold on;
-stairs(time_s, left_gaze_validity, 'DisplayName', 'Left gaze');
-stairs(time_s, right_gaze_validity, 'DisplayName', 'Right gaze');
-stairs(time_s, left_origin_validity, '--', 'DisplayName', 'Left origin');
-stairs(time_s, right_origin_validity, '--', 'DisplayName', 'Right origin');
-ylim([-0.1, 1.1]);
-grid on;
-xlabel('Time [s]');
-ylabel('Validity [0 invalid, 1 valid]');
-title('Gaze and origin validity');
-legend('Location', 'best');
-
-%% Figure 2: pupil diameter and eye-origin movement
+%% Pupil diameter and eye-origin movement
 figure('Name', 'Tobii pupil and gaze origin', 'Color', 'w');
 
 subplot(2, 1, 1);
@@ -232,7 +220,7 @@ ylabel('Position [mm]');
 title('Gaze-origin movement in Tobii user coordinates');
 legend('Location', 'best');
 
-%% Figure 3: 3-D gaze point and gaze origin in Tobii user coordinates
+%% 3-D gaze point and gaze origin in Tobii user coordinates
 figure('Name', 'Tobii 3-D user coordinates', 'Color', 'w');
 hold on;
 plot3( ...
@@ -267,23 +255,6 @@ zlabel('User z [mm]');
 title('Gaze points and origins in Tobii user coordinates');
 legend('Location', 'best');
 view(3);
-
-%% Figure 4: sampling interval and timing gaps
-figure('Name', 'Tobii timing', 'Color', 'w');
-
-subplot(2, 1, 1);
-plot(time_s(2:end), sample_interval_s * 1e3, '.');
-grid on;
-xlabel('Time [s]');
-ylabel('Sample interval [ms]');
-title('Inter-sample interval');
-
-subplot(2, 1, 2);
-histogram(positive_intervals_s * 1e3, 50);
-grid on;
-xlabel('Sample interval [ms]');
-ylabel('Count');
-title('Distribution of positive sample intervals');
 
 %% Local functions
 function numeric_values = get_numeric_column(raw_column)
