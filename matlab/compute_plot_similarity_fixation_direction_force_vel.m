@@ -10,8 +10,10 @@
 % Output:
 %   One spatial plot containing the robot trajectory, combined valid gaze,
 %   I-VT fixation centres, and vectors between consecutive fixations in the
-%   CoppeliaSim x-y frame. fixation_table and gaze_sample_results remain in
-%   the MATLAB workspace. No input data is modified.
+%   CoppeliaSim x-y frame. A second figure contains separate velocity-vector
+%   and force-vector plots along the robot path. fixation_table and
+%   gaze_sample_results remain in the MATLAB workspace. No input data is
+%   modified.
 %
 % Assumptions:
 %   The CoppeliaSim view is orthographic, unrotated, and fixed during data
@@ -36,10 +38,10 @@ clc;
 script_directory = fileparts(mfilename('fullpath'));
 gaze_csv_file = fullfile(script_directory, ...
     '..', 'data', 'raw_data', ...
-    'tobii_fixed_adm_2d_random_shape_d10.csv');
+    'tobii_fixed_adm_2d_random_shape_d50.csv');
 robot_csv_file = fullfile(script_directory, ...
     '..', 'data', 'raw_data', ...
-    'ur5e_fixed_adm_2d_random_shape_d10.csv');
+    'ur5e_fixed_adm_2d_random_shape_d50.csv');
 
 % TODO physical screen motion divided by robot motion [unitless], must be > 0.
 % Keep at 1.0 while the CoppeliaSim view is adjusted to physical 1:1 scale.
@@ -70,10 +72,22 @@ gaze_marker_size = 8;
 velocity_threshold_deg_s = 20.0;
 
 % TODO minimum retained fixation duration [s]. Current value: 0.050 s.
-minimum_fixation_duration_s = 0.050;
+minimum_fixation_duration_s = 0.060;
 
 % TODO fixation-centre marker area [points^2], recommended range: 20 to 100.
 fixation_marker_size = 50;
+
+% TODO plot one robot vector every N samples. Recommended range: 10 to 100.
+robot_vector_stride = 25;
+
+% TODO robot-force axis signs in CoppeliaSim, each must be -1 or +1.
+% The current robot and CoppeliaSim frames have the same x-y directions.
+robot_force_to_coppelia_axis_sign = [1.0, 1.0];
+
+% TODO MATLAB quiver display factor [unitless], recommended range: 0.2 to 1.
+% Vector components retain their m/s and N values; the factor controls only
+% their displayed arrow lengths on axes whose position units are metres.
+robot_quiver_auto_scale_factor = 0.8;
 
 if screen_motion_per_robot_motion <= 0
     error('screen_motion_per_robot_motion must be positive.');
@@ -86,6 +100,15 @@ if velocity_threshold_deg_s <= 0
 end
 if minimum_fixation_duration_s < 0
     error('minimum_fixation_duration_s cannot be negative.');
+end
+if robot_vector_stride < 1 || robot_vector_stride ~= floor(robot_vector_stride)
+    error('robot_vector_stride must be a positive integer.');
+end
+if any(abs(robot_force_to_coppelia_axis_sign) ~= 1)
+    error('Each robot-force-to-CoppeliaSim axis sign must be -1 or +1.');
+end
+if robot_quiver_auto_scale_factor <= 0
+    error('robot_quiver_auto_scale_factor must be positive.');
 end
 
 %% Load and combine valid Tobii gaze points
@@ -263,23 +286,54 @@ robot_table = readtable(robot_csv_file, ...
     'TextType', 'string');
 
 required_robot_variables = {
+    'time_s'
     'coppeliasim_x_m'
     'coppeliasim_y_m'
+    'Fx_filt_N'
+    'Fy_filt_N'
     };
 require_table_variables( ...
     robot_table, required_robot_variables, 'UR5e CSV');
 
+robot_time_s = get_numeric_column(robot_table.time_s);
 coppeliasim_x_m = get_numeric_column(robot_table.coppeliasim_x_m);
 coppeliasim_y_m = get_numeric_column(robot_table.coppeliasim_y_m);
-robot_position_valid = isfinite(coppeliasim_x_m) & ...
-    isfinite(coppeliasim_y_m);
-coppeliasim_xy_m = [ ...
-    coppeliasim_x_m(robot_position_valid), ...
-    coppeliasim_y_m(robot_position_valid)];
+force_x_filtered_n = get_numeric_column(robot_table.Fx_filt_N);
+force_y_filtered_n = get_numeric_column(robot_table.Fy_filt_N);
 
-if isempty(coppeliasim_xy_m)
-    error('The UR5e CSV contains no finite CoppeliaSim x-y positions.');
+robot_sample_valid = isfinite(robot_time_s) & ...
+    isfinite(coppeliasim_x_m) & isfinite(coppeliasim_y_m) & ...
+    isfinite(force_x_filtered_n) & isfinite(force_y_filtered_n);
+robot_time_s = robot_time_s(robot_sample_valid);
+coppeliasim_x_m = coppeliasim_x_m(robot_sample_valid);
+coppeliasim_y_m = coppeliasim_y_m(robot_sample_valid);
+force_x_filtered_n = force_x_filtered_n(robot_sample_valid);
+force_y_filtered_n = force_y_filtered_n(robot_sample_valid);
+
+[robot_time_s, robot_sort_order] = sort(robot_time_s);
+coppeliasim_x_m = coppeliasim_x_m(robot_sort_order);
+coppeliasim_y_m = coppeliasim_y_m(robot_sort_order);
+force_x_filtered_n = force_x_filtered_n(robot_sort_order);
+force_y_filtered_n = force_y_filtered_n(robot_sort_order);
+
+[robot_time_s, unique_time_indices] = unique(robot_time_s, 'stable');
+coppeliasim_x_m = coppeliasim_x_m(unique_time_indices);
+coppeliasim_y_m = coppeliasim_y_m(unique_time_indices);
+force_x_filtered_n = force_x_filtered_n(unique_time_indices);
+force_y_filtered_n = force_y_filtered_n(unique_time_indices);
+
+coppeliasim_xy_m = [coppeliasim_x_m, coppeliasim_y_m];
+
+if numel(robot_time_s) < 2
+    error('The UR5e CSV contains fewer than two valid unique samples.');
 end
+
+coppeliasim_velocity_x_m_s = gradient(coppeliasim_x_m, robot_time_s);
+coppeliasim_velocity_y_m_s = gradient(coppeliasim_y_m, robot_time_s);
+force_x_coppeliasim_n = ...
+    robot_force_to_coppelia_axis_sign(1) * force_x_filtered_n;
+force_y_coppeliasim_n = ...
+    robot_force_to_coppelia_axis_sign(2) * force_y_filtered_n;
 
 %% Transform Tobii UCS millimetres into CoppeliaSim metres
 % The current 1:1 physical display/robot scale reduces this conversion to
@@ -391,6 +445,70 @@ title({ ...
     sprintf('%s; %.1f deg/s, %.0f ms minimum', ...
     alignment_description, velocity_threshold_deg_s, ...
     minimum_fixation_duration_s * 1e3)});
+legend('Location', 'best');
+
+%% Plot robot velocity and force vectors along the trajectory
+robot_vector_indices = (1:robot_vector_stride:numel(robot_time_s))';
+coppeliasim_x_limits_m = [min(coppeliasim_x_m), max(coppeliasim_x_m)];
+coppeliasim_y_limits_m = [min(coppeliasim_y_m), max(coppeliasim_y_m)];
+x_margin_m = max(0.05 * diff(coppeliasim_x_limits_m), 0.005);
+y_margin_m = max(0.05 * diff(coppeliasim_y_limits_m), 0.005);
+
+figure('Name', 'UR5e velocity and force vectors', ...
+    'Color', 'w');
+
+subplot(1, 2, 1);
+hold on;
+plot( ...
+    coppeliasim_x_m, ...
+    coppeliasim_y_m, ...
+    'Color', [0.70, 0.70, 0.70], ...
+    'LineWidth', 1.5, ...
+    'DisplayName', 'UR5e end-effector trajectory');
+quiver( ...
+    coppeliasim_x_m(robot_vector_indices), ...
+    coppeliasim_y_m(robot_vector_indices), ...
+    coppeliasim_velocity_x_m_s(robot_vector_indices), ...
+    coppeliasim_velocity_y_m_s(robot_vector_indices), ...
+    robot_quiver_auto_scale_factor, ...
+    'Color', [0.10, 0.45, 0.85], ...
+    'LineWidth', 1.0, ...
+    'MaxHeadSize', 1.5, ...
+    'DisplayName', 'Measured velocity');
+grid on;
+axis equal;
+xlim(coppeliasim_x_limits_m + [-x_margin_m, x_margin_m]);
+ylim(coppeliasim_y_limits_m + [-y_margin_m, y_margin_m]);
+xlabel('CoppeliaSim x [m]');
+ylabel('CoppeliaSim y [m]');
+title('Velocity vectors along robot trajectory');
+legend('Location', 'best');
+
+subplot(1, 2, 2);
+hold on;
+plot( ...
+    coppeliasim_x_m, ...
+    coppeliasim_y_m, ...
+    'Color', [0.70, 0.70, 0.70], ...
+    'LineWidth', 1.5, ...
+    'DisplayName', 'UR5e end-effector trajectory');
+quiver( ...
+    coppeliasim_x_m(robot_vector_indices), ...
+    coppeliasim_y_m(robot_vector_indices), ...
+    force_x_coppeliasim_n(robot_vector_indices), ...
+    force_y_coppeliasim_n(robot_vector_indices), ...
+    robot_quiver_auto_scale_factor, ...
+    'Color', [0.85, 0.25, 0.10], ...
+    'LineWidth', 1.0, ...
+    'MaxHeadSize', 1.5, ...
+    'DisplayName', 'Filtered force');
+grid on;
+axis equal;
+xlim(coppeliasim_x_limits_m + [-x_margin_m, x_margin_m]);
+ylim(coppeliasim_y_limits_m + [-y_margin_m, y_margin_m]);
+xlabel('CoppeliaSim x [m]');
+ylabel('CoppeliaSim y [m]');
+title('Force vectors along robot trajectory');
 legend('Location', 'best');
 
 fprintf('Robot samples plotted: %d\n', size(coppeliasim_xy_m, 1));
