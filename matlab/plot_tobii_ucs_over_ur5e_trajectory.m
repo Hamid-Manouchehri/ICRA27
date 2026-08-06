@@ -49,13 +49,13 @@ tobii_to_coppelia_axis_sign = [1.0, 1.0];
 % TODO translation method: "data_centers" or "manual_reference".
 % "data_centers" makes the plot immediately usable but removes the mean
 % gaze-to-robot offset. It is not an absolute spatial calibration.
-alignment_mode = "data_centers";
+alignment_mode = "manual_reference";
 
 % TODO one corresponding Tobii/CoppeliaSim point used only when
 % alignment_mode="manual_reference". Enter finite [x, y] values in [mm]
 % and [m], respectively.
-manual_tobii_reference_xy_mm = [NaN, NaN];  % mm
-manual_coppelia_reference_xy_m = [NaN, NaN];  % m
+manual_tobii_reference_xy_mm = [-20.558563, 177.032173];  % mm
+manual_coppelia_reference_xy_m = [-0.014000, -0.650000];  % m
 
 % TODO true excludes gaze estimates outside normalized display [0, 1]^2.
 plot_only_on_display_gaze = true;
