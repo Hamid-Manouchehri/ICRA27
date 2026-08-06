@@ -53,14 +53,16 @@ write_data_csv_path = (
     Path(__file__).resolve().parent.parent /
     "data" /
     "raw_data" /
-    "ur5e_fixed_adm_2d_ellipse_s2_d100.csv"
+    # "ur5e_fixed_adm_2d_ellipse_s2_d100.csv"
+    "ur5e_fixed_adm_2d_random_shape_d100.csv"
 )
 # TODO output CSV path [file path]; resolved from this script, not cwd.
 tobii_data_csv_path = (
     Path(__file__).resolve().parent.parent /
     "data" /
     "raw_data" /
-    "tobii_fixed_adm_2d_ellipse_s2_d100.csv"
+    # "tobii_fixed_adm_2d_ellipse_s2_d100.csv"
+    "tobii_fixed_adm_2d_random_shape_d100.csv"
 )
 # TODO Tobii output CSV path [file path]; one row per Tobii callback sample.
 
@@ -71,13 +73,21 @@ send_robot_commands = True  # TODO bool; use True only after checking signs
 
 move_to_start_configuration = True  # TODO bool; False skips startup move
 start_joint_q_deg = [  # TODO joint angles [deg], within robot joint limits
-    -85.0,
-    -97.0,
-    -97.0,
-    -76.0,
-    90.0,
-    -10.0,
+    -77.64,
+    -98.5,
+    -95.80,
+    -75.75,
+    90.3,
+    -2.75,
 ]
+# start_joint_q_deg = [  # TODO joint angles [deg], lower z, close to table for calibration stuffs
+#     -77.7,
+#     -115.7,
+#     -113.0,
+#     -42.0,
+#     90.22,
+#     -2.7,
+# ]  # end-effector close to table; lower z
 start_joint_q = [q_deg * math.pi / 180.0 for q_deg in start_joint_q_deg]
 start_joint_speed = 0.5  # TODO moveJ speed [rad/s], recommended 0.1 to 1
 start_joint_acceleration = 0.5  # TODO moveJ acceleration [rad/s^2], 0.1 to 2
@@ -97,12 +107,36 @@ force_lpf_alpha = 0.2  # TODO filter alpha [0, 1]; smaller is smoother
 force_deadband = 1.0  # TODO ignore force noise below this value [N], 0 to 5
 
 max_cart_speed = 0.15  # TODO planar speed limit [m/s], recommended 0.01 to 0.15
-max_displacement_from_start = 0.25  # TODO planar radius [m], must be positive
+
+# Axis-aligned rectangular workspace in the UR5e base-frame x-y plane.
+# TODO lower [x, y] corner offsets from startup TCP [m]. Each value must be
+# smaller than the corresponding upper-corner value.
+workspace_lower_corner_offset_m = [-0.2, -0.2]
+# TODO upper [x, y] corner offsets from startup TCP [m].
+workspace_upper_corner_offset_m = [0.25, 0.25]
+
+if (
+    len(workspace_lower_corner_offset_m) != 2 or
+    len(workspace_upper_corner_offset_m) != 2
+):
+    raise ValueError("Workspace corner offsets must contain [x, y].")
+
+if any(
+    lower_value >= upper_value
+    for lower_value, upper_value in zip(
+        workspace_lower_corner_offset_m,
+        workspace_upper_corner_offset_m,
+    )
+):
+    raise ValueError(
+        "Each workspace lower-corner offset must be less than its "
+        "upper-corner offset."
+    )
 
 force_bias_samples = 250  # TODO unloaded samples [count], recommended >= 100
 max_runtime_seconds = 120  # TODO automatic stop time [s], must be positive
 # TODO subject preparation delay before control/recording [s], valid >= 0.
-subject_preparation_time_s = 5.0
+subject_preparation_time_s = 1.0  # seconds
 
 # TODO set signs so positive push directions produce positive base-frame motion.
 force_sign_x = 1.0  # TODO x sign [unitless], valid values: -1 or +1
@@ -125,8 +159,8 @@ coppeliasim_position_offset = [  # TODO world-frame offset [m]
     0.0,
 ]
 coppeliasim_position_signs = [  # TODO axis signs [unitless], each is -1 or +1
-    -1.0,
-    -1.0,
+    1.0,
+    1.0,
     1.0,
 ]
 
@@ -232,9 +266,9 @@ def map_tcp_position_to_coppeliasim(tcp_position_xyz):
 
     return [
         coppeliasim_position_offset[0] +
-        coppeliasim_position_signs[0] * tcp_position_xyz[0] - 0.087,
+        coppeliasim_position_signs[0] * tcp_position_xyz[0],
         coppeliasim_position_offset[1] +
-        coppeliasim_position_signs[1] * tcp_position_xyz[1] - 0.54,
+        coppeliasim_position_signs[1] * tcp_position_xyz[1],
         coppeliasim_position_offset[2] +
         coppeliasim_position_signs[2] * tcp_position_xyz[2],
     ]
@@ -628,28 +662,38 @@ def integrate_fixed_admittance():
 
 
 def apply_workspace_limit(tcp_position):
-    """Remove outward planar velocity beyond the start-position radius."""
+    """Remove velocity components pointing outside the x-y rectangle.
 
-    displacement = [
-        tcp_position[0] - start_position[0],
-        tcp_position[1] - start_position[1],
+    Input:
+        tcp_position: measured [x, y] TCP position [m] in the UR5e base frame.
+
+    The rectangular corners are user-defined offsets from start_position [m].
+    Inward and edge-tangential velocity components remain available.
+    """
+
+    workspace_lower_corner_m = [
+        start_position[0] + workspace_lower_corner_offset_m[0],
+        start_position[1] + workspace_lower_corner_offset_m[1],
+    ]
+    workspace_upper_corner_m = [
+        start_position[0] + workspace_upper_corner_offset_m[0],
+        start_position[1] + workspace_upper_corner_offset_m[1],
     ]
 
-    distance = vec2_norm(displacement)
+    at_lower_x = tcp_position[0] <= workspace_lower_corner_m[0]
+    at_upper_x = tcp_position[0] >= workspace_upper_corner_m[0]
+    at_lower_y = tcp_position[1] <= workspace_lower_corner_m[1]
+    at_upper_y = tcp_position[1] >= workspace_upper_corner_m[1]
 
-    if distance < max_displacement_from_start or distance < 1e-6:
-        return
+    if (at_lower_x and cart_velocity[0] < 0.0) or (
+        at_upper_x and cart_velocity[0] > 0.0
+    ):
+        cart_velocity[0] = 0.0
 
-    outward_velocity = (
-        cart_velocity[0] * displacement[0] +
-        cart_velocity[1] * displacement[1]
-    ) / distance
-
-    if outward_velocity <= 0.0:
-        return
-
-    cart_velocity[0] -= outward_velocity * displacement[0] / distance
-    cart_velocity[1] -= outward_velocity * displacement[1] / distance
+    if (at_lower_y and cart_velocity[1] < 0.0) or (
+        at_upper_y and cart_velocity[1] > 0.0
+    ):
+        cart_velocity[1] = 0.0
 
 
 def send_speed_command(rtde_control_interface):
