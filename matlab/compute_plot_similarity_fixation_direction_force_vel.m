@@ -15,8 +15,9 @@
 %   fixation-direction similarity with mean force and mean velocity during each
 %   complete interval between consecutive fixations. A fourth figure overlays
 %   the corresponding unit gaze and transition-mean force/velocity directions
-%   at each fixation. fixation_table, gaze_sample_results, and similarity_table
-%   remain in the workspace. No input data is modified.
+%   at each fixation. A fifth figure shows the angular gaze-velocity histogram
+%   and I-VT threshold. fixation_table, gaze_sample_results, and
+%   similarity_table remain in the workspace. No input data is modified.
 %
 % Assumptions:
 %   The CoppeliaSim view is orthographic, unrotated, and fixed during data
@@ -35,17 +36,17 @@
 %   and velocity averaging interval is defined by each fixation transition.
 
 clear;
-close all;
+% close all;
 clc;
 
 %% User Settings
 script_directory = fileparts(mfilename('fullpath'));
 gaze_csv_file = fullfile(script_directory, ...
     '..', 'data', 'raw_data', ...
-    'tobii_fixed_adm_2d_random_shape_d10.csv');
+    'tobii_fixed_adm_2d_sym_random_shape_1_d100.csv');
 robot_csv_file = fullfile(script_directory, ...
     '..', 'data', 'raw_data', ...
-    'ur5e_fixed_adm_2d_random_shape_d10.csv');
+    'ur5e_fixed_adm_2d_sym_random_shape_1_d10l0.csv');
 
 % TODO physical screen motion divided by robot motion [unitless], must be > 0.
 % Keep at 1.0 while the CoppeliaSim view is adjusted to physical 1:1 scale.
@@ -63,7 +64,9 @@ alignment_mode = "manual_reference";
 % TODO one corresponding Tobii/CoppeliaSim point used only when
 % alignment_mode="manual_reference". Enter finite [x, y] values in [mm]
 % and [m], respectively.
-manual_tobii_reference_xy_mm = [-20.713572, 181.247559];  % mm TODO
+% Note: it is a SETUP DEPENDENT reference point not necessarily subject
+% dependent
+manual_tobii_reference_xy_mm = [80.247969, 158.432304];  % mm TODO
 manual_coppelia_reference_xy_m = [-0.014000, -0.650000];  % m
 
 % TODO true excludes gaze estimates outside normalized display [0, 1]^2.
@@ -109,6 +112,9 @@ minimum_mean_velocity_m_s = 1e-4;  % [m/s], must be > 0
 % This affects only Figure 4; recommended range: 0.005 to 0.030 m.
 transition_direction_arrow_length_m = 0.015;
 
+% TODO angular-velocity histogram bin count [count], recommended: 20 to 100.
+angular_velocity_histogram_bin_count = 50;
+
 if screen_motion_per_robot_motion <= 0
     error('screen_motion_per_robot_motion must be positive.');
 end
@@ -142,6 +148,11 @@ if minimum_fixation_displacement_m <= 0 || ...
 end
 if transition_direction_arrow_length_m <= 0
     error('transition_direction_arrow_length_m must be positive.');
+end
+if angular_velocity_histogram_bin_count < 1 || ...
+        angular_velocity_histogram_bin_count ~= ...
+        floor(angular_velocity_histogram_bin_count)
+    error('angular_velocity_histogram_bin_count must be a positive integer.');
 end
 
 %% Load and combine valid Tobii gaze points
@@ -324,6 +335,8 @@ required_robot_variables = {
     'coppeliasim_y_m'
     'Fx_filt_N'
     'Fy_filt_N'
+    'B_x_Ns_m'
+    'B_y_Ns_m'
     };
 require_table_variables( ...
     robot_table, required_robot_variables, 'UR5e CSV');
@@ -333,27 +346,36 @@ coppeliasim_x_m = get_numeric_column(robot_table.coppeliasim_x_m);
 coppeliasim_y_m = get_numeric_column(robot_table.coppeliasim_y_m);
 force_x_filtered_n = get_numeric_column(robot_table.Fx_filt_N);
 force_y_filtered_n = get_numeric_column(robot_table.Fy_filt_N);
+damping_x_n_s_m = get_numeric_column(robot_table.B_x_Ns_m);
+damping_y_n_s_m = get_numeric_column(robot_table.B_y_Ns_m);
 
 robot_sample_valid = isfinite(robot_time_s) & ...
     isfinite(coppeliasim_x_m) & isfinite(coppeliasim_y_m) & ...
-    isfinite(force_x_filtered_n) & isfinite(force_y_filtered_n);
+    isfinite(force_x_filtered_n) & isfinite(force_y_filtered_n) & ...
+    isfinite(damping_x_n_s_m) & isfinite(damping_y_n_s_m);
 robot_time_s = robot_time_s(robot_sample_valid);
 coppeliasim_x_m = coppeliasim_x_m(robot_sample_valid);
 coppeliasim_y_m = coppeliasim_y_m(robot_sample_valid);
 force_x_filtered_n = force_x_filtered_n(robot_sample_valid);
 force_y_filtered_n = force_y_filtered_n(robot_sample_valid);
+damping_x_n_s_m = damping_x_n_s_m(robot_sample_valid);
+damping_y_n_s_m = damping_y_n_s_m(robot_sample_valid);
 
 [robot_time_s, robot_sort_order] = sort(robot_time_s);
 coppeliasim_x_m = coppeliasim_x_m(robot_sort_order);
 coppeliasim_y_m = coppeliasim_y_m(robot_sort_order);
 force_x_filtered_n = force_x_filtered_n(robot_sort_order);
 force_y_filtered_n = force_y_filtered_n(robot_sort_order);
+damping_x_n_s_m = damping_x_n_s_m(robot_sort_order);
+damping_y_n_s_m = damping_y_n_s_m(robot_sort_order);
 
 [robot_time_s, unique_time_indices] = unique(robot_time_s, 'stable');
 coppeliasim_x_m = coppeliasim_x_m(unique_time_indices);
 coppeliasim_y_m = coppeliasim_y_m(unique_time_indices);
 force_x_filtered_n = force_x_filtered_n(unique_time_indices);
 force_y_filtered_n = force_y_filtered_n(unique_time_indices);
+damping_x_n_s_m = damping_x_n_s_m(unique_time_indices);
+damping_y_n_s_m = damping_y_n_s_m(unique_time_indices);
 
 coppeliasim_xy_m = [coppeliasim_x_m, coppeliasim_y_m];
 
@@ -367,6 +389,26 @@ force_x_coppeliasim_n = ...
     robot_force_to_coppelia_axis_sign(1) * force_x_filtered_n;
 force_y_coppeliasim_n = ...
     robot_force_to_coppelia_axis_sign(2) * force_y_filtered_n;
+
+damping_x_limits_n_s_m = [min(damping_x_n_s_m), max(damping_x_n_s_m)];
+damping_y_limits_n_s_m = [min(damping_y_n_s_m), max(damping_y_n_s_m)];
+damping_scale_n_s_m = max([ ...
+    1.0, abs(damping_x_limits_n_s_m), abs(damping_y_limits_n_s_m)]);
+damping_tolerance_n_s_m = 1e-9 * damping_scale_n_s_m;
+
+if diff(damping_x_limits_n_s_m) <= damping_tolerance_n_s_m && ...
+        diff(damping_y_limits_n_s_m) <= damping_tolerance_n_s_m
+    damping_x_n_s_m = mean(damping_x_limits_n_s_m);
+    damping_y_n_s_m = mean(damping_y_limits_n_s_m);
+    damping_description = sprintf( ...
+        'Damping: B_x = %.1f, B_y = %.1f N s/m', ...
+        damping_x_n_s_m, damping_y_n_s_m);
+else
+    damping_description = sprintf( ...
+        'Damping ranges: B_x = %.1f-%.1f, B_y = %.1f-%.1f N s/m', ...
+        damping_x_limits_n_s_m(1), damping_x_limits_n_s_m(2), ...
+        damping_y_limits_n_s_m(1), damping_y_limits_n_s_m(2));
+end
 
 %% Transform Tobii UCS millimetres into CoppeliaSim metres
 % The current 1:1 physical display/robot scale reduces this conversion to
@@ -477,7 +519,8 @@ title({ ...
     'I-VT fixations over UR5e end-effector trajectory', ...
     sprintf('%s; %.1f deg/s, %.0f ms minimum', ...
     alignment_description, velocity_threshold_deg_s, ...
-    minimum_fixation_duration_s * 1e3)});
+    minimum_fixation_duration_s * 1e3), ...
+    damping_description});
 legend('Location', 'best');
 
 %% Plot robot velocity and force vectors along the trajectory
@@ -543,6 +586,7 @@ xlabel('CoppeliaSim x [m]');
 ylabel('CoppeliaSim y [m]');
 title('Force vectors along robot trajectory');
 legend('Location', 'best');
+sgtitle(damping_description);
 
 %% Compute fixation-transition similarity with force and velocity
 % Transition i points from fixation i to fixation i+1. Its exact temporal
@@ -739,6 +783,7 @@ ylim([-1.05, 1.05]);
 xlabel('Fixation-transition centre on robot timeline [s]');
 ylabel('Cosine similarity');
 title('Fixation direction vs mean velocity during each transition');
+sgtitle(damping_description);
 
 %% Overlay corresponding transition-direction vectors on the robot path
 % Every arrow starts at fixation i. The green arrow points toward fixation
@@ -865,6 +910,35 @@ xlabel('CoppeliaSim x [m]');
 ylabel('CoppeliaSim y [m]');
 title('Gaze transition and corresponding mean velocity');
 legend('Location', 'best');
+sgtitle(damping_description);
+
+%% Plot angular gaze-velocity distribution used by I-VT
+finite_angular_velocity_deg_s = ...
+    angular_velocity_deg_s(isfinite(angular_velocity_deg_s));
+
+figure('Name', 'Angular gaze-velocity histogram', 'Color', 'w');
+histogram( ...
+    finite_angular_velocity_deg_s, ...
+    angular_velocity_histogram_bin_count, ...
+    'FaceColor', [0.25, 0.50, 0.80], ...
+    'EdgeColor', 'k', ...
+    'DisplayName', 'Finite gaze samples');
+hold on;
+xline( ...
+    velocity_threshold_deg_s, ...
+    'r--', ...
+    sprintf('I-VT threshold: %.1f deg/s', velocity_threshold_deg_s), ...
+    'LineWidth', 1.5, ...
+    'LabelVerticalAlignment', 'middle', ...
+    'DisplayName', 'I-VT threshold');
+grid on;
+xlabel('Angular gaze velocity [deg/s]');
+ylabel('Number of samples');
+title({ ...
+    sprintf('Angular gaze-velocity distribution (%d finite samples)', ...
+    numel(finite_angular_velocity_deg_s)), ...
+    damping_description});
+legend('Location', 'best');
 
 fprintf('Robot samples plotted: %d\n', size(coppeliasim_xy_m, 1));
 fprintf('Valid combined gaze samples plotted: %d of %d\n', ...
@@ -879,6 +953,7 @@ fprintf('Tobii reference [mm]: [%.3f, %.3f]\n', ...
 fprintf('CoppeliaSim reference [m]: [%.6f, %.6f]\n', ...
     coppelia_reference_xy_m(1), coppelia_reference_xy_m(2));
 fprintf('Alignment: %s\n', alignment_description);
+fprintf('%s\n', damping_description);
 fprintf('Fixation transitions: %d\n', transition_count);
 if transition_count > 0
     fprintf('Transition duration [s], min/median/max: %.4f / %.4f / %.4f\n', ...
