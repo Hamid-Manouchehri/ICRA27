@@ -9,6 +9,10 @@ Outputs:
     Optional UR5e Cartesian velocity command [vx, vy, 0, 0, 0, 0].
     CSV log with planar force, position, velocity, and fixed admittance data.
     Tobii gaze CSV containing every field returned by the SDK callback.
+    Both CSV files use the same host-monotonic time_s origin. The Tobii CSV
+    also preserves the SDK device and system timestamps without modification.
+    Tobii time_s marks callback arrival on the host; the SDK timestamps remain
+    available when device-acquisition timing or callback latency is required.
     Optional CoppeliaSim end-effector position trajectory through a separate
     Python process using the ZeroMQ Remote API.
 
@@ -53,16 +57,16 @@ write_data_csv_path = (
     Path(__file__).resolve().parent.parent /
     "data" /
     "raw_data" /
-    # "ur5e_fixed_adm_2d_ellipse_s2_d100.csv"
-    "ur5e_fixed_adm_2d_random_shape_d100.csv"
+    # "ur5e_fixed_adm_2d_test.csv"
+    "ur5e_fixed_adm_2d_random_shape_d50.csv"
 )
 # TODO output CSV path [file path]; resolved from this script, not cwd.
 tobii_data_csv_path = (
     Path(__file__).resolve().parent.parent /
     "data" /
     "raw_data" /
-    # "tobii_fixed_adm_2d_ellipse_s2_d100.csv"
-    "tobii_fixed_adm_2d_random_shape_d100.csv"
+    # "tobii_fixed_adm_2d_test.csv"
+    "tobii_fixed_adm_2d_random_shape_d50.csv"
 )
 # TODO Tobii output CSV path [file path]; one row per Tobii callback sample.
 
@@ -92,7 +96,7 @@ start_joint_q = [q_deg * math.pi / 180.0 for q_deg in start_joint_q_deg]
 start_joint_speed = 0.5  # TODO moveJ speed [rad/s], recommended 0.1 to 1
 start_joint_acceleration = 0.5  # TODO moveJ acceleration [rad/s^2], 0.1 to 2
 
-control_frequency = 125.0  # TODO control rate [Hz], recommended 125 to 500
+control_frequency = 500.0  # TODO UR5e native control rate [Hz], use 500
 dt = 1.0 / control_frequency
 speedl_acceleration = 0.5  # TODO speedL acceleration [m/s^2], 0.1 to 2
 speed_stop_deceleration = 2.0  # TODO speedStop deceleration [m/s^2], 0.5 to 5
@@ -100,8 +104,8 @@ speed_stop_deceleration = 2.0  # TODO speedStop deceleration [m/s^2], 0.5 to 5
 # Fixed planar admittance settings. Both mass and damping must be positive.
 M_inertia_x = 10.0  # TODO virtual x mass [kg], recommended 1 to 20
 M_inertia_y = 10.0  # TODO virtual y mass [kg], recommended 1 to 20
-B_damping_x = 100.0  # TODO fixed x damping [Ns/m], recommended 20 to 120
-B_damping_y = 100.0  # TODO fixed y damping [Ns/m], recommended 20 to 120
+B_damping_x = 50.0  # TODO fixed x damping [Ns/m], recommended 20 to 120
+B_damping_y = 50.0  # TODO fixed y damping [Ns/m], recommended 20 to 120
 
 force_lpf_alpha = 0.2  # TODO filter alpha [0, 1]; smaller is smoother
 force_deadband = 1.0  # TODO ignore force noise below this value [N], 0 to 5
@@ -484,24 +488,32 @@ def make_tobii_csv_value(value):
     return value
 
 
-def write_tobii_csv(gaze_queue, stop_event):
-    """Write every queued Tobii dictionary field to CSV in a thread."""
+def write_tobii_csv(gaze_queue, writer_stop_event):
+    """Write synchronized Tobii callback samples to CSV in a thread."""
 
     with open(tobii_data_csv_path, "w", newline="") as csv_file:
         csv_writer = csv.writer(csv_file)
         csv_field_names = None
 
-        while not stop_event.is_set() or not gaze_queue.empty():
+        while not writer_stop_event.is_set() or not gaze_queue.empty():
             try:
-                gaze_sample = gaze_queue.get(timeout=0.1)
+                (
+                    time_s,
+                    host_monotonic_time_ns,
+                    gaze_sample,
+                ) = gaze_queue.get(timeout=0.1)
             except queue.Empty:
                 continue
 
             if csv_field_names is None:
                 csv_field_names = sorted(gaze_sample.keys())
-                csv_writer.writerow(csv_field_names + ["sdk_data_json"])
+                csv_writer.writerow(
+                    ["time_s", "host_monotonic_time_ns"] +
+                    csv_field_names +
+                    ["sdk_data_json"]
+                )
 
-            csv_row = [
+            csv_row = [time_s, host_monotonic_time_ns] + [
                 make_tobii_csv_value(gaze_sample.get(field_name))
                 for field_name in csv_field_names
             ]
@@ -514,16 +526,43 @@ def write_tobii_csv(gaze_queue, stop_event):
             csv_writer.writerow(csv_row)
 
 
-def create_tobii_gaze_callback(gaze_queue):
-    """Create a callback that queues the complete SDK dictionary."""
+def create_tobii_gaze_callback(
+    gaze_queue,
+    recording_active_event,
+    trial_clock,
+):
+    """Queue SDK gaze data with the shared host-monotonic trial time."""
 
     def gaze_callback(data):
-        """Queue one complete SDK dictionary without file I/O."""
+        """Timestamp and queue one SDK dictionary without file I/O."""
+
+        if not recording_active_event.is_set():
+            return
+
+        host_monotonic_time_ns = time.perf_counter_ns()
+        trial_start_time_ns = trial_clock["start_time_ns"]
+
+        if trial_start_time_ns is None:
+            return
 
         gaze_sample = dict(data)
+        time_s = (
+            host_monotonic_time_ns - trial_start_time_ns
+        ) * 1e-9
+
+        # The second check prevents a callback that overlaps trial shutdown
+        # from adding a post-stop sample to the queue.
+        if not recording_active_event.is_set():
+            return
 
         try:
-            gaze_queue.put_nowait(gaze_sample)
+            gaze_queue.put_nowait(
+                (
+                    time_s,
+                    host_monotonic_time_ns,
+                    gaze_sample,
+                )
+            )
         except queue.Full:
             # Do not block the Tobii SDK callback if the writer falls behind.
             pass
@@ -531,8 +570,8 @@ def create_tobii_gaze_callback(gaze_queue):
     return gaze_callback
 
 
-def start_tobii_recording():
-    """Find a Tobii tracker and start callback acquisition plus CSV writing."""
+def start_tobii_recording(recording_active_event, trial_clock):
+    """Arm Tobii acquisition and its synchronized CSV writer."""
 
     if not enable_tobii_recording:
         print("Tobii recording disabled by user setting.")
@@ -555,14 +594,18 @@ def start_tobii_recording():
 
     tracker = trackers[0]
     gaze_queue = queue.Queue(maxsize=tobii_queue_size)
-    stop_event = threading.Event()
+    writer_stop_event = threading.Event()
     writer_thread = threading.Thread(
         target=write_tobii_csv,
-        args=(gaze_queue, stop_event),
+        args=(gaze_queue, writer_stop_event),
         name="tobii_csv_writer",
         daemon=True,
     )
-    gaze_callback = create_tobii_gaze_callback(gaze_queue)
+    gaze_callback = create_tobii_gaze_callback(
+        gaze_queue,
+        recording_active_event,
+        trial_clock,
+    )
 
     writer_thread.start()
     tracker.subscribe_to(
@@ -584,7 +627,7 @@ def start_tobii_recording():
         tobii_research_api,
         tracker,
         gaze_callback,
-        stop_event,
+        writer_stop_event,
         writer_thread,
     )
 
@@ -599,7 +642,7 @@ def stop_tobii_recording(tobii_recording):
         tobii_research_api,
         tracker,
         gaze_callback,
-        stop_event,
+        writer_stop_event,
         writer_thread,
     ) = tobii_recording
 
@@ -609,7 +652,7 @@ def stop_tobii_recording(tobii_recording):
             gaze_callback,
         )
     finally:
-        stop_event.set()
+        writer_stop_event.set()
         writer_thread.join(timeout=2.0)
 
 
@@ -742,6 +785,7 @@ def write_csv_header(csv_writer):
 
     csv_writer.writerow([
         "time_s",
+        "host_monotonic_time_ns",
         "Fx_raw_N",
         "Fy_raw_N",
         "Fx_filt_N",
@@ -763,13 +807,19 @@ def write_csv_header(csv_writer):
     ])
 
 
-def write_csv_row(csv_writer, time_s, tcp_position):
+def write_csv_row(
+    csv_writer,
+    time_s,
+    host_monotonic_time_ns,
+    tcp_position,
+):
     """Write one planar controller sample to the CSV file."""
 
     coppeliasim_position = map_tcp_position_to_coppeliasim(tcp_position)
 
     csv_writer.writerow([
         time_s,
+        host_monotonic_time_ns,
         force_raw[0],
         force_raw[1],
         force_filtered[0],
@@ -825,12 +875,12 @@ def main():
         simulator_stop_event,
         trajectory_process,
     ) = start_coppeliasim_trajectory_process()
-    tobii_recording = start_tobii_recording()
-
-    print("Controller started. Press Ctrl+C to stop.")
-    print("send_robot_commands =", send_robot_commands)
-    print("M_inertia_x/y [kg] =", M_inertia_x, M_inertia_y)
-    print("B_damping_x/y [Ns/m] =", B_damping_x, B_damping_y)
+    recording_active_event = threading.Event()
+    trial_clock = {"start_time_ns": None}
+    tobii_recording = start_tobii_recording(
+        recording_active_event,
+        trial_clock,
+    )
 
     try:
         with open(write_data_csv_path, "w", newline="") as csv_file:
@@ -838,12 +888,25 @@ def main():
             write_csv_header(csv_writer)
 
             max_steps = int(max_runtime_seconds / dt)
+            trial_start_time_ns = time.perf_counter_ns()
+            trial_clock["start_time_ns"] = trial_start_time_ns
+            recording_active_event.set()
+
+            print("Controller and synchronized recording started.")
+            print("Press Ctrl+C to stop.")
+            print("send_robot_commands =", send_robot_commands)
+            print("M_inertia_x/y [kg] =", M_inertia_x, M_inertia_y)
+            print("B_damping_x/y [Ns/m] =", B_damping_x, B_damping_y)
 
             for step_idx in range(max_steps):
                 if not keep_running:
                     break
 
                 period_start = rtde_control_interface.initPeriod()
+                host_monotonic_time_ns = time.perf_counter_ns()
+                time_s = (
+                    host_monotonic_time_ns - trial_start_time_ns
+                ) * 1e-9
 
                 tcp_position_xyz = read_tcp_position_xyz(
                     rtde_receive_interface
@@ -858,8 +921,12 @@ def main():
                 apply_workspace_limit(tcp_position_xy)
                 send_speed_command(rtde_control_interface)
 
-                time_s = step_idx * dt
-                write_csv_row(csv_writer, time_s, tcp_position_xyz)
+                write_csv_row(
+                    csv_writer,
+                    time_s,
+                    host_monotonic_time_ns,
+                    tcp_position_xyz,
+                )
 
                 # Queue-only operation: no CoppeliaSim API call occurs here.
                 publish_coppeliasim_trajectory_sample(
@@ -870,6 +937,7 @@ def main():
 
                 rtde_control_interface.waitPeriod(period_start)
     finally:
+        recording_active_event.clear()
         stop_tobii_recording(tobii_recording)
 
         stop_coppeliasim_trajectory_process(
