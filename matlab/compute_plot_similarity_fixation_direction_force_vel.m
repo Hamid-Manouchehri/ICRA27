@@ -1,7 +1,6 @@
 %% Overlay Tobii UCS gaze points on the UR5e/CoppeliaSim trajectory.
 %
 % file name: compute_plot_similarity_fixation_detection_force_vel.m
-% Version: v0.0
 %
 % Inputs:
 %   tobii_fixed_adm_2d_....csv

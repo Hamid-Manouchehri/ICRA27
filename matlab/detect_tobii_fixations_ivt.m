@@ -22,16 +22,17 @@
 %   Settings. I-VT thresholds should be validated for the task and tracker.
 
 clear;
+close all;
 clc;
 
 %% User Settings
 script_directory = fileparts(mfilename('fullpath'));
 input_csv_file = fullfile(script_directory, ...
     '..', 'data', 'raw_data', ...
-    'tobii_fixed_adm_2d_ellipse_s2_d100.csv');
+    'tobii_fixed_adm_2d_ellipse_s1_d100.csv');
 output_csv_file = fullfile(script_directory, ...
     '..', 'data', 'processed_data', ...
-    'tobii_fixed_adm_2d_ellipse_s2_d100_fixations_ivt.csv');
+    'tobii_fixed_adm_2d_ellipse_s1_d100_fixations_ivt.csv');
 
 % TODO I-VT angular-velocity threshold [deg/s]. Recommended initial range:
 % 20 to 70 deg/s; tune and report the selected value for each experiment.
