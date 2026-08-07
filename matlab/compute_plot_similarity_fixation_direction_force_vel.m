@@ -1,11 +1,16 @@
 %% Overlay Tobii UCS gaze points on the UR5e/CoppeliaSim trajectory.
 %
+% file name: compute_plot_similarity_fixation_detection_force_vel.m
+% Version: v0.0
+%
 % Inputs:
 %   tobii_fixed_adm_2d_....csv
 %     Left/right gaze points in Tobii User Coordinate System (UCS) [mm],
 %     display-area coordinates, validity flags, and synchronized time_s.
 %   ur5e_fixed_adm_2d_....csv
 %     End-effector trajectory in the CoppeliaSim x-y frame [m].
+%   tobii_coppelia_reference.json
+%     Manual Tobii UCS [mm] and CoppeliaSim [m] x-y reference vectors.
 %
 % Output:
 %   One spatial plot containing the robot trajectory, combined valid gaze,
@@ -48,6 +53,13 @@ robot_csv_file = fullfile(script_directory, ...
     '..', 'data', 'raw_data', ...
     'ur5e_fixed_adm_2d_sym_random_shape_1_d100.csv');  % TODO: please set the corresponding CSV filename
 
+% TODO calibration filename identifier. Change this to
+% switch between setup/subject/session calibration files.
+calibration_id = "tobii_coppelia_reference_sym_random_shape_1.json";
+
+calibration_json_file = fullfile(script_directory, ...
+    '..', 'data', 'calibrations', calibration_id);
+
 % TODO physical screen motion divided by robot motion [unitless], must be > 0.
 % Keep at 1.0 while the CoppeliaSim view is adjusted to physical 1:1 scale.
 screen_motion_per_robot_motion = 1.0;
@@ -60,14 +72,6 @@ tobii_to_coppelia_axis_sign = [1.0, 1.0];
 % "data_centers" makes the plot immediately usable but removes the mean
 % gaze-to-robot offset. It is not an absolute spatial calibration.
 alignment_mode = "manual_reference";
-
-% TODO one corresponding Tobii/CoppeliaSim point used only when
-% alignment_mode="manual_reference". Enter finite [x, y] values in [mm]
-% and [m], respectively.
-% Note: it is a SETUP DEPENDENT reference point not necessarily subject
-% dependent
-manual_tobii_reference_xy_mm = [80.247969, 158.432304];  % mm TODO
-manual_coppelia_reference_xy_m = [-0.014000, -0.650000];  % m
 
 % TODO true excludes gaze estimates outside normalized display [0, 1]^2.
 plot_only_on_display_gaze = true;
@@ -127,6 +131,41 @@ fixation_label_offset_m = 0.002;
 
 % TODO correspondence-label font size [points], recommended: 6 to 12.
 correspondence_label_font_size = 8;
+
+%% Load Manual Spatial Reference
+manual_tobii_reference_xy_mm = [NaN, NaN];
+manual_coppelia_reference_xy_m = [NaN, NaN];
+
+if alignment_mode == "manual_reference"
+    if strlength(calibration_id) == 0
+        error('calibration_id cannot be empty for manual-reference alignment.');
+    end
+    if ~isfile(calibration_json_file)
+        error('Calibration JSON file not found: %s', calibration_json_file);
+    end
+
+    calibration_reference = jsondecode(fileread(calibration_json_file));
+    if ~isfield(calibration_reference, ...
+            'manual_tobii_reference_xy_mm') || ...
+            ~isfield(calibration_reference, ...
+            'manual_coppelia_reference_xy_m')
+        error('Calibration JSON is missing one or both reference vectors.');
+    end
+
+    manual_tobii_reference_xy_mm = double( ...
+        calibration_reference.manual_tobii_reference_xy_mm);
+    manual_coppelia_reference_xy_m = double( ...
+        calibration_reference.manual_coppelia_reference_xy_m);
+    manual_tobii_reference_xy_mm = manual_tobii_reference_xy_mm(:)';
+    manual_coppelia_reference_xy_m = manual_coppelia_reference_xy_m(:)';
+
+    if numel(manual_tobii_reference_xy_mm) ~= 2 || ...
+            numel(manual_coppelia_reference_xy_m) ~= 2 || ...
+            any(~isfinite(manual_tobii_reference_xy_mm)) || ...
+            any(~isfinite(manual_coppelia_reference_xy_m))
+        error('Calibration JSON reference vectors must be finite [x, y].');
+    end
+end
 
 if screen_motion_per_robot_motion <= 0
     error('screen_motion_per_robot_motion must be positive.');
@@ -1038,6 +1077,10 @@ fprintf('Tobii reference [mm]: [%.3f, %.3f]\n', ...
 fprintf('CoppeliaSim reference [m]: [%.6f, %.6f]\n', ...
     coppelia_reference_xy_m(1), coppelia_reference_xy_m(2));
 fprintf('Alignment: %s\n', alignment_description);
+if alignment_mode == "manual_reference"
+    fprintf('Calibration ID: %s\n', char(calibration_id));
+    fprintf('Calibration JSON: %s\n', calibration_json_file);
+end
 fprintf('%s\n', damping_description);
 fprintf('Fixation transitions: %d\n', transition_count);
 if transition_count > 0
