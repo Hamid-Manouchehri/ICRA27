@@ -58,7 +58,7 @@ write_data_csv_path = (
     "data" /
     "raw_data" /
     # "ur5e_fixed_adm_2d_test.csv"
-    "ur5e_fixed_adm_2d_sym_random_shape_1_d100.csv"
+    "ur5e_fixed_adm_2d_sym_random_shape_intentional_gaze_follow_d100.csv"
 )
 # TODO output CSV path [file path]; resolved from this script, not cwd.
 tobii_data_csv_path = (
@@ -66,7 +66,7 @@ tobii_data_csv_path = (
     "data" /
     "raw_data" /
     # "tobii_fixed_adm_2d_test.csv"
-    "tobii_fixed_adm_2d_sym_random_shape_1_d100.csv"
+    "tobii_fixed_adm_2d_sym_random_shape_intentional_gaze_follow_d100.csv"
 )
 # TODO Tobii output CSV path [file path]; one row per Tobii callback sample.
 
