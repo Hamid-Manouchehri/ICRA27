@@ -20,8 +20,9 @@
 %   complete interval between consecutive fixations. A fourth figure overlays
 %   the corresponding unit gaze and transition-mean force/velocity directions
 %   at each fixation. A fifth figure shows the angular gaze-velocity histogram
-%   and I-VT threshold. fixation_table, gaze_sample_results, and
-%   fixation_transition_table remain in the workspace. The same transition
+%   and I-VT threshold. A sixth figure shows all candidate fixation durations
+%   before short candidates are rejected. fixation_table, gaze_sample_results,
+%   and fixation_transition_table remain in the workspace. The same transition
 %   table is written to data/processed_data as CSV. No input data is modified.
 %
 % Assumptions:
@@ -48,10 +49,10 @@ clc;
 script_directory = fileparts(mfilename('fullpath'));
 gaze_csv_file = fullfile(script_directory, ...
     '..', 'data', 'raw_data', ...
-    'tobii_fixed_adm_2d_sym_random_shape_intentional_gaze_follow_d100.csv');  % TODO: please set the corresponding CSV filename
+    'tobii_fixed_adm_2d_sym_random_shape_1_d50.csv');  % TODO: please set the corresponding CSV filename
 robot_csv_file = fullfile(script_directory, ...
     '..', 'data', 'raw_data', ...
-    'ur5e_fixed_adm_2d_sym_random_shape_intentional_gaze_follow_d100.csv');  % TODO: please set the corresponding CSV filename
+    'ur5e_fixed_adm_2d_sym_random_shape_1_d50.csv');  % TODO: please set the corresponding CSV filename
 
 % TODO processed transition-table output directory [folder path]. The output
 % filename is derived from the selected robot CSV and replaces an existing file.
@@ -87,7 +88,7 @@ alignment_mode = "manual_reference";
 plot_only_on_display_gaze = true;
 
 % TODO raw gaze marker size [points^2], recommended range: 2 to 20.
-gaze_marker_size = 8;
+gaze_marker_size = 10;
 
 % TODO I-VT angular-velocity threshold [deg/s]. Recommended range: 20 to 70.
 velocity_threshold_deg_s = 20.0;
@@ -99,7 +100,7 @@ minimum_fixation_duration_s = 0.060;
 fixation_marker_size = 50;
 
 % TODO plot one robot vector every N samples. Recommended range: 10 to 100.
-robot_vector_stride = 25;
+robot_vector_stride = 100;
 
 % TODO robot-force axis signs in CoppeliaSim, each must be -1 or +1.
 % The current robot and CoppeliaSim frames have the same x-y directions.
@@ -107,7 +108,7 @@ robot_force_to_coppelia_axis_sign = [1.0, 1.0];
 
 % TODO MATLAB quiver display factor [unitless], recommended range: 0.2 to 1.
 % Vector components retain their m/s and N values; the factor controls only
-% their displayed arrow lengths on axes whose position units are metres.
+% their displayed arrow lengths on axes whose position units are meters.
 robot_quiver_auto_scale_factor = 0.8;
 
 % TODO optional correction added to synchronized gaze time [s]. Keep at zero
@@ -128,7 +129,10 @@ minimum_mean_velocity_m_s = 1e-4;  % [m/s], must be > 0
 transition_direction_arrow_length_m = 0.015;
 
 % TODO angular-velocity histogram bin count [count], recommended: 20 to 100.
-angular_velocity_histogram_bin_count = 50;
+angular_velocity_histogram_bin_count = 100;
+
+% TODO candidate-duration histogram bin width [ms], recommended: 5 to 50 ms.
+candidate_duration_histogram_bin_width_ms = 20.0;
 
 % TODO show F1, F2, ... and F1->F2 correspondence labels [logical].
 show_correspondence_labels = true;
@@ -140,7 +144,7 @@ transition_label_stride = 1;
 fixation_label_offset_m = 0.002;
 
 % TODO correspondence-label font size [points], recommended: 6 to 12.
-correspondence_label_font_size = 8;
+correspondence_label_font_size = 10;
 
 %% Load Manual Spatial Reference
 manual_tobii_reference_xy_mm = [NaN, NaN];
@@ -215,6 +219,9 @@ if angular_velocity_histogram_bin_count < 1 || ...
         angular_velocity_histogram_bin_count ~= ...
         floor(angular_velocity_histogram_bin_count)
     error('angular_velocity_histogram_bin_count must be a positive integer.');
+end
+if candidate_duration_histogram_bin_width_ms <= 0
+    error('candidate_duration_histogram_bin_width_ms must be positive.');
 end
 if transition_label_stride < 1 || ...
         transition_label_stride ~= floor(transition_label_stride)
@@ -317,6 +324,9 @@ fixation_candidate = combined_gaze_valid & ...
 candidate_changes = diff(double([false; fixation_candidate; false]));
 candidate_start_indices = find(candidate_changes == 1);
 candidate_end_indices = find(candidate_changes == -1) - 1;
+all_candidate_duration_s = ...
+    gaze_time_s(candidate_end_indices) - ...
+    gaze_time_s(candidate_start_indices);
 
 gaze_is_fixation = false(height(gaze_table), 1);
 fixation_start_time_s = zeros(0, 1);
@@ -1137,9 +1147,41 @@ title({ ...
     damping_description});
 legend('Location', 'best');
 
+%% Plot candidate fixation durations before minimum-duration rejection
+candidate_duration_ms = all_candidate_duration_s * 1e3;
+
+figure('Name', 'I-VT candidate-duration histogram', 'Color', 'w');
+histogram( ...
+    candidate_duration_ms, ...
+    'BinWidth', candidate_duration_histogram_bin_width_ms, ...
+    'FaceColor', [0.25, 0.65, 0.35], ...
+    'EdgeColor', 'k', ...
+    'DisplayName', 'All low-velocity candidate groups');
+hold on;
+xline( ...
+    minimum_fixation_duration_s * 1e3, ...
+    'r--', ...
+    sprintf('Minimum duration: %.1f ms', ...
+    minimum_fixation_duration_s * 1e3), ...
+    'LineWidth', 1.5, ...
+    'LabelVerticalAlignment', 'middle', ...
+    'DisplayName', 'Minimum retained duration');
+grid on;
+xlabel('Candidate fixation duration [ms]');
+ylabel('Number of candidate groups');
+title({ ...
+    sprintf('I-VT candidates before duration filtering (%d groups)', ...
+    numel(candidate_duration_ms)), ...
+    damping_description});
+legend('Location', 'best');
+
 fprintf('Robot samples plotted: %d\n', size(coppeliasim_xy_m, 1));
 fprintf('Valid combined gaze samples plotted: %d of %d\n', ...
     sum(combined_gaze_valid), height(gaze_table));
+fprintf('I-VT candidate groups before duration filtering: %d\n', ...
+    numel(all_candidate_duration_s));
+fprintf('Candidate groups rejected by minimum duration: %d\n', ...
+    nnz(all_candidate_duration_s < minimum_fixation_duration_s));
 fprintf('Retained I-VT fixations: %d\n', height(fixation_table));
 fprintf('I-VT threshold: %.2f deg/s; minimum duration: %.1f ms\n', ...
     velocity_threshold_deg_s, minimum_fixation_duration_s * 1e3);

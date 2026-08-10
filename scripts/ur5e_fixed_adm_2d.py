@@ -4,10 +4,13 @@ Fixed-admittance planar controller for UR5e motion in the base-frame x-y plane.
 Inputs:
     UR5e TCP wrench from RTDE, using only [Fx, Fy] [N].
     UR5e TCP position from RTDE, using only [x, y] [m].
+    UR5e actual TCP velocity from RTDE as [vx, vy, vz, wx, wy, wz],
+    with linear components [m/s] and angular components [rad/s].
 
 Outputs:
     Optional UR5e Cartesian velocity command [vx, vy, 0, 0, 0, 0].
-    CSV log with planar force, position, velocity, and fixed admittance data.
+    CSV log with planar force, TCP position, measured TCP velocity,
+    commanded velocity, and fixed admittance data.
     Tobii gaze CSV containing every field returned by the SDK callback.
     Both CSV files use the same host-monotonic time_s origin. The Tobii CSV
     also preserves the SDK device and system timestamps without modification.
@@ -262,6 +265,26 @@ def read_tcp_position_xyz(rtde_receive_interface):
         tcp_pose[0],
         tcp_pose[1],
         tcp_pose[2],
+    ]
+
+
+def read_tcp_actual_velocity(rtde_receive_interface):
+    """Read actual base-frame TCP velocity from the UR5e.
+
+    Returns:
+        [vx, vy, vz, wx, wy, wz], where linear components are [m/s]
+        and angular components are [rad/s].
+    """
+
+    tcp_actual_speed = rtde_receive_interface.getActualTCPSpeed()
+
+    return [
+        tcp_actual_speed[0],
+        tcp_actual_speed[1],
+        tcp_actual_speed[2],
+        tcp_actual_speed[3],
+        tcp_actual_speed[4],
+        tcp_actual_speed[5],
     ]
 
 
@@ -796,6 +819,12 @@ def write_csv_header(csv_writer):
         "coppeliasim_x_m",
         "coppeliasim_y_m",
         "coppeliasim_z_m",
+        "tcp_vx_actual_m_s",
+        "tcp_vy_actual_m_s",
+        "tcp_vz_actual_m_s",
+        "tcp_wx_actual_rad_s",
+        "tcp_wy_actual_rad_s",
+        "tcp_wz_actual_rad_s",
         "vx_cmd_m_s",
         "vy_cmd_m_s",
         "speed_cmd_m_s",
@@ -812,8 +841,9 @@ def write_csv_row(
     time_s,
     host_monotonic_time_ns,
     tcp_position,
+    tcp_actual_velocity,
 ):
-    """Write one planar controller sample to the CSV file."""
+    """Write one controller sample with measured TCP state to CSV."""
 
     coppeliasim_position = map_tcp_position_to_coppeliasim(tcp_position)
 
@@ -830,6 +860,12 @@ def write_csv_row(
         coppeliasim_position[0],
         coppeliasim_position[1],
         coppeliasim_position[2],
+        tcp_actual_velocity[0],
+        tcp_actual_velocity[1],
+        tcp_actual_velocity[2],
+        tcp_actual_velocity[3],
+        tcp_actual_velocity[4],
+        tcp_actual_velocity[5],
         cart_velocity[0],
         cart_velocity[1],
         vec2_norm(cart_velocity),
@@ -911,6 +947,9 @@ def main():
                 tcp_position_xyz = read_tcp_position_xyz(
                     rtde_receive_interface
                 )
+                tcp_actual_velocity = read_tcp_actual_velocity(
+                    rtde_receive_interface
+                )
                 tcp_position_xy = [
                     tcp_position_xyz[0],
                     tcp_position_xyz[1],
@@ -926,6 +965,7 @@ def main():
                     time_s,
                     host_monotonic_time_ns,
                     tcp_position_xyz,
+                    tcp_actual_velocity,
                 )
 
                 # Queue-only operation: no CoppeliaSim API call occurs here.

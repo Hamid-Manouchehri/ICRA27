@@ -42,7 +42,7 @@ scripts/ur5e_tobii_reference_calibration.py
 
 - **Purpose:** Main fixation-transition analysis. It maps Tobii UCS gaze into the CoppeliaSim x-y frame, detects fixations, forms arrows between consecutive fixations, averages robot force and velocity during each transition, and computes cosine similarity.
 - **Inputs:** A matching Tobii/UR5e raw CSV pair plus a calibration JSON from `data/calibrations/`. The current analysis expects the synchronized `time_s` column recorded by `scripts/ur5e_fixed_adm_2d.py`.
-- **Output:** Five diagnostic figures; `fixation_table`, `gaze_sample_results`, and `fixation_transition_table` in the workspace; and a canonical `*_fixation_transitions.csv` file in `data/processed_data`. Each CSV row represents one transition and includes timing, fixation endpoints/direction, mean force, mean velocity, damping, similarities, angles, sample counts, and validity flags.
+- **Output:** Six diagnostic figures, including angular-velocity and candidate-duration histograms; `fixation_table`, `gaze_sample_results`, and `fixation_transition_table` in the workspace; and a canonical `*_fixation_transitions.csv` file in `data/processed_data`. Each CSV row represents one transition and includes timing, fixation endpoints/direction, mean force, mean velocity, damping, similarities, angles, sample counts, and validity flags.
 - **Main settings:** Trial CSVs, `calibration_id`, spatial scale/axis signs, I-VT thresholds, transition quality thresholds, and plot controls.
 - **Relationship:** This processed transition CSV is the best starting point for later fixation-level hypotheses and plots.
 
