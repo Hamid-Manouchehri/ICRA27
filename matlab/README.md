@@ -57,9 +57,9 @@ scripts/ur5e_tobii_reference_calibration.py
 ### `analyze_gaze_tcp_lead_lag_curvature.m`
 
 - **Purpose:** Determines whether each fixation transition leads the TCP, follows it, or is approximately synchronous by scanning TCP time lag and maximizing directional cosine similarity. It also computes filtered planar TCP curvature.
-- **Inputs:** A `*_fixation_transitions.csv` from `compute_plot_similarity_fixation_direction_force_vel.m` and its matching raw UR5e CSV. The raw file is inferred from `trial_id` unless overridden.
-- **Output:** `lead_lag_table` and `lag_similarity_matrix` in the workspace, three lead-lag/curvature figures, and a `*_gaze_tcp_lead_lag.csv` summary in `data/processed_data`.
-- **Main settings:** Lag vector, TCP displacement-window duration, synchronous-lag tolerance, minimum gaze/TCP displacement, minimum meaningful similarity, peak prominence, and TCP position/curvature filtering windows.
+- **Inputs:** A `*_fixation_transitions.csv` from `compute_plot_similarity_fixation_direction_force_vel.m` and its matching raw UR5e CSV. The raw file is inferred automatically from `trial_id`.
+- **Output:** `lead_lag_table` and `lag_similarity_matrix` in the workspace, two lead-lag/curvature figures, and a `*_gaze_tcp_lead_lag.csv` summary in `data/processed_data`.
+- **Main settings:** Lag vector, TCP displacement-window duration, synchronous-lag tolerance, minimum gaze/TCP displacement, and minimum meaningful similarity.
 - **Relationship:** This is a downstream analysis of the canonical fixation-transition CSV; it does not rerun fixation detection or gaze-to-CoppeliaSim calibration.
 
 ## Important notes
