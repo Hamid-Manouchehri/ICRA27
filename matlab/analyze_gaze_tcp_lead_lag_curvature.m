@@ -16,8 +16,9 @@
 % Outputs:
 %   lead_lag_table in the workspace and a *_gaze_tcp_lead_lag.csv file in
 %   data/processed_data. lag_similarity_matrix contains S_i(tau) for every
-%   transition and scanned lag. Two figures show temporal results/curvature
-%   and spatial leader/follower locations. Inputs are not modified.
+%   transition and scanned lag. Three figures show temporal results,
+%   spatial leader/follower locations, and curvature over the TCP path.
+%   Inputs are not modified.
 %
 % Sign convention:
 %   tau_star > synchronous_lag_tolerance_s  -> gaze leads TCP
@@ -40,7 +41,7 @@ script_directory = fileparts(mfilename('fullpath'));
 % TODO Select the fixation-transition CSV to analyze.
 read_transition_csv_file = fullfile( ...
     script_directory, '..', 'data', 'processed_data', ...
-    'ur5e_fixed_adm_2d_sym_random_shape_intentional_gaze_lead_d50_fixation_transitions.csv');
+    'ur5e_fixed_adm_2d_s2_irregular_shape_d10_fixation_transitions.csv');
 
 % TODO TCP lag scan [s]. Recommended range: -2 to +2 s with a step of
 % 0.01 to 0.05 s. Positive tau means the matching TCP motion occurs later.
@@ -546,7 +547,8 @@ sgtitle(strrep(char(trial_id), '_', '\_'));
 
 %% Figure 2: spatial leader/follower locations on the TCP path
 transition_labels = compose( ...
-    "F%d->F%d", from_fixation, to_fixation);
+    "F%d->F%d, t_ref=%.2f s", ...
+    from_fixation, to_fixation, tcp_reference_time_s);
 
 figure('Name', 'Spatial gaze-TCP leader/follower map', 'Color', 'w');
 hold on;
@@ -596,6 +598,36 @@ title({ ...
     'Leader/follower class at the start of fixation F_{i+1}', ...
     strrep(char(trial_id), '_', '\_')});
 legend('Location', 'best');
+
+%% Figure 3: TCP trajectory colored by planar curvature
+valid_curvature_sample = ...
+    isfinite(tcp.x_filtered_m) & ...
+    isfinite(tcp.y_filtered_m) & ...
+    isfinite(tcp.curvature_1_m);
+
+figure('Name', 'TCP trajectory curvature heatmap', 'Color', 'w');
+hold on;
+plot(tcp.x_filtered_m, tcp.y_filtered_m, ...
+    '-', ...
+    'Color', [0.85, 0.85, 0.85], ...
+    'LineWidth', 1.0, ...
+    'HandleVisibility', 'off');
+scatter( ...
+    tcp.x_filtered_m(valid_curvature_sample), ...
+    tcp.y_filtered_m(valid_curvature_sample), ...
+    18, ...
+    tcp.curvature_1_m(valid_curvature_sample), ...
+    'filled');
+curvature_colorbar = colorbar;
+curvature_colorbar.Label.String = 'Absolute TCP curvature [1/m]';
+colormap(gca, parula(256));
+axis equal;
+grid on;
+xlabel('CoppeliaSim x [m]');
+ylabel('CoppeliaSim y [m]');
+title({ ...
+    'Planar TCP curvature over the filtered trajectory', ...
+    strrep(char(trial_id), '_', '\_')});
 
 %% Local functions
 function require_table_variables(data_table, required_variables, table_name)

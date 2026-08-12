@@ -17,8 +17,10 @@ scripts/ur5e_tobii_reference_calibration.py
     -> data/calibrations/*.json
          `-> compute_plot_similarity_*.m
                 -> data/processed_data/*_fixation_transitions.csv
-                     `-> analyze_gaze_tcp_lead_lag_curvature.m
-                          -> *_gaze_tcp_lead_lag.csv
+                     |-> analyze_gaze_tcp_lead_lag_curvature.m
+                     |    -> *_gaze_tcp_lead_lag.csv
+                     `-> analyze_gaze_tcp_lead_lag_curvature_v2.m
+                          -> *_gaze_tcp_path_lead_lag.csv
 ```
 
 ## Script guide
@@ -58,9 +60,17 @@ scripts/ur5e_tobii_reference_calibration.py
 
 - **Purpose:** Determines whether each fixation transition leads the TCP, follows it, or is approximately synchronous by scanning TCP time lag and maximizing directional cosine similarity. It also computes filtered planar TCP curvature.
 - **Inputs:** A `*_fixation_transitions.csv` from `compute_plot_similarity_fixation_direction_force_vel.m` and its matching raw UR5e CSV. The raw file is inferred automatically from `trial_id`.
-- **Output:** `lead_lag_table` and `lag_similarity_matrix` in the workspace, two lead-lag/curvature figures, and a `*_gaze_tcp_lead_lag.csv` summary in `data/processed_data`.
+- **Output:** `lead_lag_table` and `lag_similarity_matrix` in the workspace, three lead-lag/curvature figures (including a TCP-path curvature heatmap), and a `*_gaze_tcp_lead_lag.csv` summary in `data/processed_data`.
 - **Main settings:** Lag vector, TCP displacement-window duration, synchronous-lag tolerance, minimum gaze/TCP displacement, and minimum meaningful similarity.
 - **Relationship:** This is a downstream analysis of the canonical fixation-transition CSV; it does not rerun fixation detection or gaze-to-CoppeliaSim calibration.
+
+### `analyze_gaze_tcp_lead_lag_curvature_v2.m`
+
+- **Purpose:** Classifies gaze versus TCP leadership without lag windows. It projects each new fixation centre onto the time-ordered TCP path and compares the fixation reference time with the time when the TCP reaches that path location.
+- **Inputs:** A `*_fixation_transitions.csv` and its automatically inferred raw UR5e CSV.
+- **Output:** `lead_lag_table`, three direct lead/curvature figures, and a `*_gaze_tcp_path_lead_lag.csv` file in `data/processed_data`.
+- **Main settings:** Synchronous-time tolerance and maximum accepted fixation-to-path projection distance.
+- **Sign convention:** Positive `gaze_lead_time_s` and `gaze_spatial_lead_m` mean gaze is ahead; negative values mean TCP is ahead.
 
 ## Important notes
 

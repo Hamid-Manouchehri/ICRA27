@@ -49,10 +49,10 @@ clc;
 script_directory = fileparts(mfilename('fullpath'));
 gaze_csv_file = fullfile(script_directory, ...
     '..', 'data', 'raw_data', ...
-    'tobii_fixed_adm_2d_sym_random_shape_1_d50.csv');  % TODO: please set the corresponding CSV filename
+    'tobii_fixed_adm_2d_irregular_shape_2_d10.csv');  % TODO: please set the corresponding CSV filename
 robot_csv_file = fullfile(script_directory, ...
     '..', 'data', 'raw_data', ...
-    'ur5e_fixed_adm_2d_sym_random_shape_1_d50.csv');  % TODO: please set the corresponding CSV filename
+    'ur5e_fixed_adm_2d_irregular_shape_2_d10.csv');  % TODO: please set the corresponding CSV filename
 
 % TODO processed transition-table output directory [folder path]. The output
 % filename is derived from the selected robot CSV and replaces an existing file.
@@ -66,7 +66,7 @@ transition_csv_file = fullfile( ...
 
 % TODO calibration filename identifier. Change this to
 % switch between setup/subject/session calibration files.
-calibration_id = "tobii_coppelia_reference_sym_random_shape_1.json";
+calibration_id = "tobii_coppelia_reference_irregular_shape_2.json";
 
 calibration_json_file = fullfile(script_directory, ...
     '..', 'data', 'calibrations', calibration_id);
@@ -618,6 +618,13 @@ title({ ...
     minimum_fixation_duration_s * 1e3), ...
     damping_description});
 legend('Location', 'best');
+
+
+figure;
+subplot(2,1,1);
+plot(gaze_time_s(combined_gaze_valid), gaze_coppeliasim_xy_m(combined_gaze_valid, 1));
+subplot(2,1,2);
+plot(gaze_time_s(combined_gaze_valid), gaze_coppeliasim_xy_m(combined_gaze_valid, 2));
 
 %% Plot robot velocity and force vectors along the trajectory
 robot_vector_indices = (1:robot_vector_stride:numel(robot_time_s))';

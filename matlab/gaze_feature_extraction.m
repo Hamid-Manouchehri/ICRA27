@@ -28,16 +28,17 @@
 %   on both 10-by-10 and 40-by-40 display grids and reported in bits.
 
 clear;
+close all
 clc;
 
 %% User Settings
 script_directory = fileparts(mfilename('fullpath'));
 gaze_data_file = fullfile(script_directory, ...
     '..', 'data', 'raw_data', ...
-    'tobii_fixed_adm_2d_ellipse_s1_d100.csv');
+    'tobii_fixed_adm_2d_s2_irregular_shape_d50.csv');
 robot_data_file = fullfile(script_directory, ...
     '..', 'data', 'raw_data', ...
-    'ur5e_fixed_adm_2d_ellipse_s1_d100.csv');
+    'ur5e_fixed_adm_2d_s2_irregular_shape_d50.csv');
 
 window_size_s = 3.5;  % TODO window duration [s], recommended 0.25 to 2
 window_step_s = 0.02; % window_size_s / 2;  % TODO step [s]; default is 50% overlap

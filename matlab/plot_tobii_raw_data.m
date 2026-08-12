@@ -14,7 +14,7 @@
 %   margin used only for the display-space plot; recommended range [0, 0.2].
 
 clear;
-close all;
+% close all;
 clc;
 
 %% User Settings
@@ -23,7 +23,14 @@ data_file = fullfile(script_directory, ...
     '..', ...
     'data', ...
     'raw_data', ...
-    'tobii_fixed_adm_2d_random_shape_d100.csv');
+    'tobii_fixed_adm_2d_s2_irregular_shape_d10.csv');
+
+robot_file = fullfile(script_directory, ...
+    '..', ...
+    'data', ...
+    'raw_data', ...o
+    'ur5e_fixed_adm_2d_s2_irregular_shape_d50.csv');
+
 display_area_margin = 0.05;  % TODO normalized display margin [0, 0.2]
 timestamp_variable = 'system_time_stamp';  % TODO system or device timestamp
 
@@ -33,6 +40,13 @@ data_table = readtable(data_file, ...
     'ReadVariableNames', true, ...
     'VariableNamingRule', 'preserve', ...
     'TextType', 'string');
+
+ur5e_table = readtable(robot_file, ...
+    'Delimiter', ',', ...
+    'ReadVariableNames', true, ...
+    'VariableNamingRule', 'preserve', ...
+    'TextType', 'string');
+
 
 required_variables = {
     timestamp_variable
@@ -167,6 +181,8 @@ subplot(2, 1, 1);
 hold on;
 plot(time_s, left_display_plot(:, 1), 'DisplayName', 'Left eye');
 plot(time_s, right_display_plot(:, 1), 'DisplayName', 'Right eye');
+hold on
+% plot(ur5e_table.time_s, ur5e_table.coppeliasim_x_m)
 yline(0, 'k--');
 yline(1, 'k--');
 grid on;
@@ -175,10 +191,14 @@ ylabel('Display x [normalized]');
 title('Horizontal gaze position');
 legend('Location', 'best');
 
+
+
 subplot(2, 1, 2);
 hold on;
 plot(time_s, left_display_plot(:, 2), 'DisplayName', 'Left eye');
 plot(time_s, right_display_plot(:, 2), 'DisplayName', 'Right eye');
+hold on
+% plot(ur5e_table.time_s, -ur5e_table.coppeliasim_y_m ./ hypot(ur5e_table.coppeliasim_x_m,ur5e_table.coppeliasim_y_m))
 yline(0, 'k--');
 yline(1, 'k--');
 grid on;
@@ -186,6 +206,10 @@ xlabel('Time [s]');
 ylabel('Display y [normalized]');
 title('Vertical gaze position');
 legend('Location', 'best');
+
+
+
+
 
 %% Pupil diameter and eye-origin movement
 figure('Name', 'Tobii pupil and gaze origin', 'Color', 'w');
@@ -255,6 +279,13 @@ zlabel('User z [mm]');
 title('Gaze points and origins in Tobii user coordinates');
 legend('Location', 'best');
 view(3);
+
+
+% figure;
+% subplot(2,1,1);
+% plot(ur5e_table.time_s, ur5e_table.x_m)
+% subplot(2,1,2);
+% plot(ur5e_table.time_s, ur5e_table.y_m)
 
 %% Local functions
 function numeric_values = get_numeric_column(raw_column)
