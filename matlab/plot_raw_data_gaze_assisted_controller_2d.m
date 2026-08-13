@@ -9,20 +9,28 @@ script_directory = fileparts(mfilename('fullpath'));
 
 csv_file = fullfile( ...
     script_directory, '..', 'data', 'raw_data', ...
-    'ur5e_gaze_assisted_adm_2d_protractor_test.csv');
+    'ur5e_gaze_assisted_adm_2d_protractor_modified_test1.csv');
 
 % Must match Python controller parameters
 fixed_damping = 200.0;          % N.s/m
-intent_forward_damping = 15.0; % N.s/m
+intent_forward_damping = 10.0; % N.s/m
 
 % Must match Python fixation_velocity_threshold_deg_s
-fixation_velocity_threshold_deg_s = 30.0; % deg/s
+fixation_velocity_threshold_deg_s = 80.0; % deg/s
 
 % Plot every Nth active intent arrow to avoid clutter
 intent_arrow_stride = 100;
 
 % Display length of intent direction arrows [m]
 intent_arrow_length_m = 0.025;
+
+% Plot every Nth instantaneous force arrow to avoid clutter
+force_arrow_stride = 50;
+
+% Force arrow scale [m per N]. Chosen so typical interaction forces (a
+% few N up to ~15 N) draw arrows comparable in size to
+% intent_arrow_length_m.
+force_arrow_scale_m_per_n = 0.01;
 
 %% Load data
 data = readtable(csv_file);
@@ -69,6 +77,20 @@ if ~isempty(active_indices)
         'Gaze intent direction');
 end
 
+% Instantaneous filtered force at the TCP, subsampled for clarity. Drawn
+% at true scale (force_arrow_scale_m_per_n) so its direction can be
+% compared against the gaze intent arrows above.
+force_indices = 1:force_arrow_stride:height(data);
+
+force_arrow_dx = force_arrow_scale_m_per_n .* ...
+    data.Fx_filtered_N(force_indices);
+force_arrow_dy = force_arrow_scale_m_per_n .* ...
+    data.Fy_filtered_N(force_indices);
+
+quiver(data.tcp_x_m(force_indices), data.tcp_y_m(force_indices), ...
+    force_arrow_dx, force_arrow_dy, 0, 'LineWidth', 1.0, 'Color', ...
+    'g', 'DisplayName', 'Instantaneous force');
+
 axis equal;
 grid on;
 xlabel('Robot base x [m]');
@@ -81,17 +103,20 @@ legend('Location', 'best');
 % Figure 2: Fixation confidence, influence, and effective damping
 % =================================================================
 
-% Effective damping in the FORWARD gaze-intent direction:
+% Effective damping in the FORWARD (instantaneous force) direction. Must
+% match calculate_damping_force() in the Python controller, which blends
+% by total_influence = intent_influence * force_intent_alignment_weight,
+% not by intent_influence alone:
 %
-% B_eff = (1-influence)*B_fixed ...
-%       + influence*B_forward
+% B_eff = (1-total_influence)*B_fixed ...
+%       + total_influence*B_forward
 
-effective_forward_damping = (1 - data.intent_influence) .* fixed_damping + ...
-    data.intent_influence .* intent_forward_damping;
+effective_forward_damping = (1 - data.total_influence) .* fixed_damping + ...
+    data.total_influence .* intent_forward_damping;
 
 figure('Name', 'Gaze confidence and damping modulation', 'Color', 'w');
 
-tiledlayout(3,1);
+tiledlayout(4,1);
 
 % ---- confidence
 nexttile;
@@ -108,6 +133,27 @@ ylabel('Value [-]');
 title('Gaze confidence and controller influence');
 
 legend('Intent confidence', 'Intent influence', 'Location', 'best');
+
+
+% ---- force-intent alignment and combined influence
+% Shows the two factors that are multiplied together to form
+% total_influence, so you can see which one is limiting how close the
+% controller gets to the light (intent_forward_damping) value.
+nexttile;
+
+plot(t, data.force_intent_alignment_weight, 'LineWidth', 1.2);
+
+hold on;
+
+plot(t, data.total_influence, 'LineWidth', 1.2);
+
+ylim([-0.05 1.05]);
+grid on;
+
+ylabel('Value [-]');
+title('Force-intent alignment weight and combined total influence');
+
+legend('Alignment weight', 'Total influence', 'Location', 'best');
 
 
 % ---- intent active
@@ -337,6 +383,24 @@ fprintf('Minimum effective forward damping: %.2f N.s/m\n', ...
 
 fprintf('Maximum effective forward damping: %.2f N.s/m\n', ...
     max(effective_forward_damping));
+
+fprintf('Mean intent influence (confidence only): %.2f\n', ...
+    mean(data.intent_influence));
+
+fprintf('Mean force-intent alignment weight: %.2f\n', ...
+    mean(data.force_intent_alignment_weight));
+
+fprintf('Mean total influence (confidence x alignment): %.2f\n', ...
+    mean(data.total_influence));
+
+% force_intent_angle_deg is NaN whenever the filtered force magnitude was
+% below minimum_force_magnitude_for_direction_n, i.e. the direction was
+% judged too noisy to trust, separately from the angle itself being too
+% large. This distinguishes the two reasons alignment_weight can be 0.
+force_direction_undefined = isnan(data.force_intent_angle_deg);
+
+fprintf('Force direction undefined (force too small): %.1f %%\n', ...
+    100 * mean(force_direction_undefined));
 
 % Duration of each contiguous gaze-intent-active window. Frequent short
 % windows (comparable to minimum_fixation_duration_s) indicate the

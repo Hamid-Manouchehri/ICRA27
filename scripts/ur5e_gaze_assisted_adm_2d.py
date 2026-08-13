@@ -15,15 +15,22 @@ Outputs:
 Controller logic:
     Gaze suggests a signed planar intent direction.
     Human-applied force drives the admittance dynamics.
-    Fixation confidence blends fixed damping with directional damping.
+    Directional (anisotropic) damping is aligned with the instantaneous
+    filtered force direction, not the gaze direction, and is blended
+    toward isotropic fixed damping unless BOTH fixation confidence is
+    high AND that force direction agrees with the gaze-intent direction
+    within force_intent_alignment_cutoff_deg. This avoids giving low
+    (compliant) damping along an axis the user is not actually pushing
+    along.
     A velocity-level control barrier function (CBF) keeps the TCP inside an
     axis-aligned rectangular workspace.
 
 Main tunable parameters:
     Workspace corners, CBF alpha, fixed/intent damping, virtual mass,
-    fixation velocity/duration thresholds, and confidence thresholds are in
-    User Settings. Check all frames, signs, limits, and the robot path before
-    setting send_robot_commands = True.
+    fixation velocity/duration thresholds, confidence thresholds, and the
+    force-intent alignment cutoff angle are in User Settings. Check all
+    frames, signs, limits, and the robot path before setting
+    send_robot_commands = True.
 
 Dependencies:
     ur_rtde and tobii-research.
@@ -66,8 +73,8 @@ workspace_upper_corner_offset_m = [0.25, 0.25]
 # closer to the boundary; smaller values slow outward motion earlier.
 cbf_alpha_per_s = 5.0
 
-max_cart_speed_m_s = 0.10  # TODO planar speed limit [m/s], 0.01 to 0.15
-speedl_acceleration_m_s2 = 0.5  # TODO speedL acceleration [m/s^2], 0.1 to 2
+max_cart_speed_m_s = 1.0  # TODO planar speed limit [m/s], 0.01 to 0.15
+speedl_acceleration_m_s2 = 1.0  # TODO speedL acceleration [m/s^2], 0.1 to 2
 speed_stop_deceleration_m_s2 = 2.0  # TODO stop deceleration [m/s^2], 0.5 to 5
 
 # Fixed fallback admittance: M*v_dot + B*v = F.
@@ -78,11 +85,23 @@ fixed_damping_y_n_s_m = 200.0  # TODO fallback y damping [N s/m], 20 to 120
 
 # At high gaze confidence, forward motion along intent receives lower damping.
 # Perpendicular and opposite motion receive the non-intent damping.
-intent_forward_damping_n_s_m = 15.0  # TODO [N s/m], positive
+intent_forward_damping_n_s_m = 1.0  # TODO [N s/m], positive
 intent_other_damping_n_s_m = 200.0  # TODO [N s/m], positive
 
+# TODO Maximum angle between the instantaneous filtered force and the
+# gaze-intent direction for any force-aligned damping reduction [deg].
+# Recommended 45 to 90. At or beyond this angle the controller uses fixed
+# damping regardless of gaze confidence, because the user is pushing away
+# from or across their own gaze target.
+force_intent_alignment_cutoff_deg = 80.0
+
+# TODO Minimum filtered planar force magnitude to trust its direction [N].
+# Recommended >= force_deadband_n. Below this the force direction is
+# undefined and force-aligned damping reduction is disabled.
+minimum_force_magnitude_for_direction_n = 0.6
+
 force_lpf_alpha = 0.2  # TODO force filter alpha [0, 1]
-force_deadband_n = 1.0  # TODO ignore force magnitude below [N], 0 to 5
+force_deadband_n = 0.5  # TODO ignore force magnitude below [N], 0 to 5
 force_sign_x = 1.0  # TODO base x force sign, -1 or +1
 force_sign_y = 1.0  # TODO base y force sign, -1 or +1
 force_bias_samples = 250  # TODO unloaded startup samples, recommended >= 100
@@ -145,10 +164,10 @@ start_joint_q_deg = [  # TODO joint angles [deg], within robot limits
     -2.75,
 ]
 start_joint_speed_rad_s = 0.5  # TODO moveJ speed [rad/s], 0.1 to 1
-start_joint_acceleration_rad_s2 = 0.5  # TODO [rad/s^2], 0.1 to 2
+start_joint_acceleration_rad_s2 = 1.0  # TODO [rad/s^2], 0.1 to 2
 
 control_frequency_hz = 500.0  # TODO UR5e e-series control rate [Hz]
-subject_preparation_time_s = 5.0  # TODO preparation delay [s], >= 0
+subject_preparation_time_s = 1.0  # TODO preparation delay [s], >= 0
 maximum_runtime_s = 120.0  # TODO automatic stop time [s], positive
 
 # TODO controller output CSV path. Raw source files are not modified.
@@ -156,7 +175,7 @@ write_data_csv_path = (
     Path(__file__).resolve().parent.parent
     / "data"
     / "raw_data"
-    / "ur5e_gaze_assisted_adm_2d_protractor_test.csv"
+    / "ur5e_gaze_assisted_adm_2d_protractor_modified_test2.csv"
 )
 
 
@@ -987,8 +1006,65 @@ def calculate_gaze_intent(
     return intent
 
 
-def calculate_damping_force(intent):
-    """Calculate fixed or confidence-weighted directional damping force."""
+def calculate_force_intent_alignment_weight(force_filtered_n, intent):
+    """Weight in [0, 1] for filtered-force agreement with gaze intent.
+
+    Returns 0.0 (fixed damping only) when the intent direction is not
+    valid, when the filtered force magnitude is below
+    minimum_force_magnitude_for_direction_n (its direction is then
+    undefined), or when the angle between the filtered force and the
+    intent direction is at or beyond force_intent_alignment_cutoff_deg.
+    Otherwise ramps linearly from 1 (0 deg apart) to 0
+    (force_intent_alignment_cutoff_deg apart), matching the linear-ramp
+    style of calculate_fixation_confidence(). This weight is continuous
+    in the force angle, so it does not introduce a hard on/off switch.
+
+    Returns:
+        alignment_weight: scalar in [0, 1].
+        force_direction_xy: unit vector, [0, 0] when undefined.
+        angle_deg: angle between force and intent direction, NaN when
+            undefined.
+    """
+
+    force_direction_xy = [0.0, 0.0]
+    angle_deg = math.nan
+
+    if not intent["target_valid"]:
+        return 0.0, force_direction_xy, angle_deg
+
+    force_magnitude_n = vector_norm_2d(force_filtered_n)
+
+    if force_magnitude_n < minimum_force_magnitude_for_direction_n:
+        return 0.0, force_direction_xy, angle_deg
+
+    force_direction_x = force_filtered_n[0] / force_magnitude_n
+    force_direction_y = force_filtered_n[1] / force_magnitude_n
+    force_direction_xy = [force_direction_x, force_direction_y]
+
+    intent_x = intent["direction_xy"][0]
+    intent_y = intent["direction_xy"][1]
+
+    cos_angle = force_direction_x * intent_x + force_direction_y * intent_y
+    cos_angle = clamp_value(cos_angle, -1.0, 1.0)
+    angle_deg = math.degrees(math.acos(cos_angle))
+
+    raw_weight = 1.0 - angle_deg / force_intent_alignment_cutoff_deg
+    alignment_weight = clamp_value(raw_weight, 0.0, 1.0)
+
+    return alignment_weight, force_direction_xy, angle_deg
+
+
+def calculate_damping_force(force_direction_xy, total_influence):
+    """Calculate fixed or force-direction-aligned damping force.
+
+    total_influence in [0, 1] is the product of gaze-fixation confidence
+    (calculate_intent_influence) and force-intent alignment weight
+    (calculate_force_intent_alignment_weight), so anisotropic damping
+    only engages when gaze is confident AND the applied force agrees
+    with the gaze-intent direction. The anisotropic (low/high damping)
+    axis is the instantaneous filtered force direction, not the gaze
+    direction.
+    """
 
     velocity_x_m_s = cart_velocity_command_m_s[0]
     velocity_y_m_s = cart_velocity_command_m_s[1]
@@ -1000,26 +1076,26 @@ def calculate_damping_force(intent):
         fixed_damping_y_n_s_m * velocity_y_m_s
     )
 
-    if not intent["active"]:
+    if total_influence <= 0.0:
         return [fixed_damping_force_x_n, fixed_damping_force_y_n]
 
-    intent_x = intent["direction_xy"][0]
-    intent_y = intent["direction_xy"][1]
-    signed_intent_speed_m_s = (
-        velocity_x_m_s * intent_x
-        + velocity_y_m_s * intent_y
+    force_dir_x = force_direction_xy[0]
+    force_dir_y = force_direction_xy[1]
+    signed_forward_speed_m_s = (
+        velocity_x_m_s * force_dir_x
+        + velocity_y_m_s * force_dir_y
     )
 
-    forward_speed_m_s = max(signed_intent_speed_m_s, 0.0)
-    opposite_speed_m_s = min(signed_intent_speed_m_s, 0.0)
+    forward_speed_m_s = max(signed_forward_speed_m_s, 0.0)
+    opposite_speed_m_s = min(signed_forward_speed_m_s, 0.0)
 
-    forward_velocity_x_m_s = forward_speed_m_s * intent_x
-    forward_velocity_y_m_s = forward_speed_m_s * intent_y
-    opposite_velocity_x_m_s = opposite_speed_m_s * intent_x
-    opposite_velocity_y_m_s = opposite_speed_m_s * intent_y
+    forward_velocity_x_m_s = forward_speed_m_s * force_dir_x
+    forward_velocity_y_m_s = forward_speed_m_s * force_dir_y
+    opposite_velocity_x_m_s = opposite_speed_m_s * force_dir_x
+    opposite_velocity_y_m_s = opposite_speed_m_s * force_dir_y
 
-    parallel_velocity_x_m_s = signed_intent_speed_m_s * intent_x
-    parallel_velocity_y_m_s = signed_intent_speed_m_s * intent_y
+    parallel_velocity_x_m_s = signed_forward_speed_m_s * force_dir_x
+    parallel_velocity_y_m_s = signed_forward_speed_m_s * force_dir_y
     perpendicular_velocity_x_m_s = (
         velocity_x_m_s - parallel_velocity_x_m_s
     )
@@ -1047,12 +1123,11 @@ def calculate_damping_force(intent):
         intent_other_damping_n_s_m * perpendicular_velocity_y_m_s
     )
 
-    influence = intent["influence"]
-    fixed_weight = 1.0 - influence
+    fixed_weight = 1.0 - total_influence
     damping_force_x_n = fixed_weight * fixed_damping_force_x_n
-    damping_force_x_n += influence * intent_damping_force_x_n
+    damping_force_x_n += total_influence * intent_damping_force_x_n
     damping_force_y_n = fixed_weight * fixed_damping_force_y_n
-    damping_force_y_n += influence * intent_damping_force_y_n
+    damping_force_y_n += total_influence * intent_damping_force_y_n
 
     return [damping_force_x_n, damping_force_y_n]
 
@@ -1062,7 +1137,15 @@ def integrate_admittance(intent, sample_period_s):
 
     global cart_velocity_command_m_s
 
-    damping_force_n = calculate_damping_force(intent)
+    alignment_weight, force_direction_xy, force_intent_angle_deg = (
+        calculate_force_intent_alignment_weight(force_filtered_n, intent)
+    )
+    total_influence = intent["influence"] * alignment_weight
+
+    damping_force_n = calculate_damping_force(
+        force_direction_xy,
+        total_influence,
+    )
 
     net_force_x_n = force_filtered_n[0] - damping_force_n[0]
     net_force_y_n = force_filtered_n[1] - damping_force_n[1]
@@ -1087,7 +1170,13 @@ def integrate_admittance(intent, sample_period_s):
     )
     cart_velocity_command_m_s = nominal_velocity_m_s
 
-    return damping_force_n, list(nominal_velocity_m_s)
+    alignment_info = {
+        "force_intent_angle_deg": force_intent_angle_deg,
+        "alignment_weight": alignment_weight,
+        "total_influence": total_influence,
+    }
+
+    return damping_force_n, list(nominal_velocity_m_s), alignment_info
 
 
 def apply_rectangular_cbf(
@@ -1219,6 +1308,9 @@ def write_csv_header(csv_writer):
         "intent_direction_x",
         "intent_direction_y",
         "intent_distance_m",
+        "force_intent_angle_deg",
+        "force_intent_alignment_weight",
+        "total_influence",
         "damping_force_x_N",
         "damping_force_y_N",
         "vx_nominal_m_s",
@@ -1238,6 +1330,7 @@ def write_csv_row(
     tcp_actual_velocity,
     fixation,
     intent,
+    alignment_info,
     damping_force_n,
     nominal_velocity_xy_m_s,
     safe_velocity_xy_m_s,
@@ -1272,6 +1365,9 @@ def write_csv_row(
         intent["direction_xy"][0],
         intent["direction_xy"][1],
         intent["distance_m"],
+        alignment_info["force_intent_angle_deg"],
+        alignment_info["alignment_weight"],
+        alignment_info["total_influence"],
         damping_force_n[0],
         damping_force_n[1],
         nominal_velocity_xy_m_s[0],
@@ -1397,9 +1493,11 @@ def main():
                 )
 
                 update_force_filter(rtde_receive_interface)
-                damping_force_n, nominal_velocity_xy_m_s = (
-                    integrate_admittance(intent, sample_period_s)
-                )
+                (
+                    damping_force_n,
+                    nominal_velocity_xy_m_s,
+                    alignment_info,
+                ) = integrate_admittance(intent, sample_period_s)
                 safe_velocity_xy_m_s, cbf_modified_velocity = (
                     apply_rectangular_cbf(
                         tcp_position_xy_m,
@@ -1423,6 +1521,7 @@ def main():
                     tcp_actual_velocity,
                     fixation,
                     intent,
+                    alignment_info,
                     damping_force_n,
                     nominal_velocity_xy_m_s,
                     safe_velocity_xy_m_s,
