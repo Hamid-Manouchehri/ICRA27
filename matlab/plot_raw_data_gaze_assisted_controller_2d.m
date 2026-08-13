@@ -135,15 +135,19 @@ title('Gaze confidence and controller influence');
 legend('Intent confidence', 'Intent influence', 'Location', 'best');
 
 
-% ---- force-intent alignment and combined influence
-% Shows the two factors that are multiplied together to form
-% total_influence, so you can see which one is limiting how close the
-% controller gets to the light (intent_forward_damping) value.
+% ---- force-intent alignment, intent distance weight, combined influence
+% Shows the three factors multiplied together to form total_influence
+% (intent_influence x alignment_weight x distance_weight), so you can
+% see which one is limiting how close the controller gets to the light
+% (intent_forward_damping) value. distance_weight ramping to 0 near a
+% fixation close to the TCP explains the "jumpy near, free far" feel.
 nexttile;
 
 plot(t, data.force_intent_alignment_weight, 'LineWidth', 1.2);
 
 hold on;
+
+plot(t, data.intent_distance_weight, 'LineWidth', 1.2);
 
 plot(t, data.total_influence, 'LineWidth', 1.2);
 
@@ -151,9 +155,10 @@ ylim([-0.05 1.05]);
 grid on;
 
 ylabel('Value [-]');
-title('Force-intent alignment weight and combined total influence');
+title('Alignment weight, distance weight, and combined total influence');
 
-legend('Alignment weight', 'Total influence', 'Location', 'best');
+legend('Alignment weight', 'Distance weight', 'Total influence', ...
+    'Location', 'best');
 
 
 % ---- intent active

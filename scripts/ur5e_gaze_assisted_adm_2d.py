@@ -62,6 +62,14 @@ import tobii_research
 # have been checked. True sends physical speedL commands.
 send_robot_commands = True
 
+# TODO controller output CSV path. Raw source files are not modified.
+write_data_csv_path = (
+    Path(__file__).resolve().parent.parent
+    / "data"
+    / "raw_data"
+    / "ur5e_gaze_assisted_adm_2d_protractor_modified_test4.csv"
+)
+
 robot_ip = "192.168.1.100"  # TODO UR5e IPv4 address or hostname
 
 # TODO Workspace offsets [x, y] from the startup TCP [m]. Recommended motion
@@ -98,7 +106,7 @@ force_intent_alignment_cutoff_deg = 80.0
 # TODO Minimum filtered planar force magnitude to trust its direction [N].
 # Recommended >= force_deadband_n. Below this the force direction is
 # undefined and force-aligned damping reduction is disabled.
-minimum_force_magnitude_for_direction_n = 0.6
+minimum_force_magnitude_for_direction_n = 1.0
 
 force_lpf_alpha = 0.2  # TODO force filter alpha [0, 1]
 force_deadband_n = 0.5  # TODO ignore force magnitude below [N], 0 to 5
@@ -120,6 +128,12 @@ maximum_fixation_age_s = 0.50
 intent_tcp_average_sample_count = 25
 # TODO avoid normalizing a nearly zero TCP-to-fixation vector [m].
 minimum_intent_distance_m = 0.005
+# TODO TCP-to-fixation distance at which intent direction is fully
+# trusted [m], must exceed minimum_intent_distance_m. Recommended 0.02 to
+# 0.08. Below this, intent influence ramps down linearly toward 0 at
+# minimum_intent_distance_m, because a fixation close to the TCP gives a
+# short, noise-sensitive direction vector.
+full_confidence_intent_distance_m = 0.03
 
 # TODO calibration file for this subject/setup.
 calibration_json_path = (
@@ -169,15 +183,6 @@ start_joint_acceleration_rad_s2 = 1.0  # TODO [rad/s^2], 0.1 to 2
 control_frequency_hz = 500.0  # TODO UR5e e-series control rate [Hz]
 subject_preparation_time_s = 1.0  # TODO preparation delay [s], >= 0
 maximum_runtime_s = 120.0  # TODO automatic stop time [s], positive
-
-# TODO controller output CSV path. Raw source files are not modified.
-write_data_csv_path = (
-    Path(__file__).resolve().parent.parent
-    / "data"
-    / "raw_data"
-    / "ur5e_gaze_assisted_adm_2d_protractor_modified_test2.csv"
-)
-
 
 # -------------------- Shared State --------------------
 keep_running = True
@@ -917,6 +922,26 @@ def calculate_fixation_confidence(fixation_duration_s):
     return clamp_value(raw_confidence, 0.0, 1.0)
 
 
+def calculate_intent_distance_weight(intent_distance_m):
+    """Map TCP-to-fixation distance to a direction-trust weight in [0, 1].
+
+    Ramps linearly from 0 at minimum_intent_distance_m to 1 at
+    full_confidence_intent_distance_m, matching the linear-ramp style of
+    calculate_fixation_confidence(). A fixation very close to the TCP
+    gives a short, noise-sensitive intent direction, so it should not
+    receive full influence just because gaze confidence is high.
+    """
+
+    distance_above_minimum_m = (
+        intent_distance_m - minimum_intent_distance_m
+    )
+    confidence_distance_range_m = (
+        full_confidence_intent_distance_m - minimum_intent_distance_m
+    )
+    raw_weight = distance_above_minimum_m / confidence_distance_range_m
+    return clamp_value(raw_weight, 0.0, 1.0)
+
+
 def calculate_intent_influence(fixation_confidence):
     """Map confidence to gaze damping influence in [0, 1]."""
 
@@ -939,6 +964,7 @@ def calculate_gaze_intent(
         "target_xy_m": [math.nan, math.nan],
         "direction_xy": [0.0, 0.0],
         "distance_m": math.nan,
+        "distance_weight": 0.0,
         "fixation_age_s": math.nan,
         "confidence": 0.0,
         "influence": 0.0,
@@ -997,6 +1023,9 @@ def calculate_gaze_intent(
         intent_direction_y,
     ]
     intent["target_valid"] = True
+    intent["distance_weight"] = calculate_intent_distance_weight(
+        intent_distance_m
+    )
 
     confidence = calculate_fixation_confidence(fixation["duration_s"])
     influence = calculate_intent_influence(confidence)
@@ -1140,7 +1169,9 @@ def integrate_admittance(intent, sample_period_s):
     alignment_weight, force_direction_xy, force_intent_angle_deg = (
         calculate_force_intent_alignment_weight(force_filtered_n, intent)
     )
-    total_influence = intent["influence"] * alignment_weight
+    total_influence = (
+        intent["influence"] * alignment_weight * intent["distance_weight"]
+    )
 
     damping_force_n = calculate_damping_force(
         force_direction_xy,
@@ -1308,6 +1339,7 @@ def write_csv_header(csv_writer):
         "intent_direction_x",
         "intent_direction_y",
         "intent_distance_m",
+        "intent_distance_weight",
         "force_intent_angle_deg",
         "force_intent_alignment_weight",
         "total_influence",
@@ -1365,6 +1397,7 @@ def write_csv_row(
         intent["direction_xy"][0],
         intent["direction_xy"][1],
         intent["distance_m"],
+        intent["distance_weight"],
         alignment_info["force_intent_angle_deg"],
         alignment_info["alignment_weight"],
         alignment_info["total_influence"],
@@ -1392,6 +1425,11 @@ def main():
 
     if full_confidence_fixation_duration_s <= minimum_fixation_duration_s:
         raise ValueError("Full-confidence duration must exceed the minimum.")
+
+    if full_confidence_intent_distance_m <= minimum_intent_distance_m:
+        raise ValueError(
+            "Full-confidence intent distance must exceed the minimum."
+        )
 
     tobii_reference_xy_mm, coppelia_reference_xy_m = (
         load_spatial_calibration()
