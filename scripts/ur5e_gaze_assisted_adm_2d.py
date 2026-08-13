@@ -7,6 +7,8 @@ Inputs:
 
 Outputs:
     Optional UR5e speedL command [vx, vy, 0, 0, 0, 0].
+    Optional `/Sphere` TCP marker trajectory in CoppeliaSim through a
+    separate ZeroMQ process.
     CSV data containing force, TCP motion, fixation, intent, confidence,
     damping, and rectangular CBF results.
 
@@ -34,9 +36,12 @@ Assumptions:
 import csv
 import json
 import math
+import multiprocessing
+import queue
 import signal
 import threading
 import time
+import traceback
 from collections import deque
 from pathlib import Path
 
@@ -48,7 +53,7 @@ import tobii_research
 # -------------------- User Settings --------------------
 # TODO Keep False until force signs, gaze mapping, workspace, and CBF behavior
 # have been checked. True sends physical speedL commands.
-send_robot_commands = False
+send_robot_commands = True
 
 robot_ip = "192.168.1.100"  # TODO UR5e IPv4 address or hostname
 
@@ -68,13 +73,13 @@ speed_stop_deceleration_m_s2 = 2.0  # TODO stop deceleration [m/s^2], 0.5 to 5
 # Fixed fallback admittance: M*v_dot + B*v = F.
 virtual_mass_x_kg = 10.0  # TODO x virtual mass [kg], recommended 1 to 20
 virtual_mass_y_kg = 10.0  # TODO y virtual mass [kg], recommended 1 to 20
-fixed_damping_x_n_s_m = 50.0  # TODO fallback x damping [N s/m], 20 to 120
-fixed_damping_y_n_s_m = 50.0  # TODO fallback y damping [N s/m], 20 to 120
+fixed_damping_x_n_s_m = 200.0  # TODO fallback x damping [N s/m], 20 to 120
+fixed_damping_y_n_s_m = 200.0  # TODO fallback y damping [N s/m], 20 to 120
 
 # At high gaze confidence, forward motion along intent receives lower damping.
 # Perpendicular and opposite motion receive the non-intent damping.
 intent_forward_damping_n_s_m = 15.0  # TODO [N s/m], positive
-intent_other_damping_n_s_m = 80.0  # TODO [N s/m], positive
+intent_other_damping_n_s_m = 200.0  # TODO [N s/m], positive
 
 force_lpf_alpha = 0.2  # TODO force filter alpha [0, 1]
 force_deadband_n = 1.0  # TODO ignore force magnitude below [N], 0 to 5
@@ -102,7 +107,7 @@ calibration_json_path = (
     Path(__file__).resolve().parent.parent
     / "data"
     / "calibrations"
-    / "tobii_coppelia_reference_irregular_shape_2.json"
+    / "tobii_coppelia_reference_protractor_shape.json"
 )
 # TODO physical screen motion / robot motion [unitless], must be positive.
 screen_motion_per_robot_motion = 1.0
@@ -115,6 +120,17 @@ tobii_to_coppelia_axis_sign = [1.0, 1.0]
 coppeliasim_axis_from_robot = [0, 1]  # TODO permutation of [0, 1]
 coppeliasim_sign_from_robot = [1.0, 1.0]  # TODO each -1 or +1
 coppeliasim_offset_xy_m = [0.0, 0.0]  # TODO CoppeliaSim offset [m]
+coppeliasim_z_sign_from_robot = 1.0  # TODO z sign, -1 or +1
+coppeliasim_z_offset_m = 0.0  # TODO CoppeliaSim z offset [m]
+
+# CoppeliaSim marker bridge. All ZeroMQ calls run in a separate process.
+send_coppeliasim_trajectory = True  # TODO requires CoppeliaSim running
+coppeliasim_host = "127.0.0.1"  # TODO ZeroMQ host or IPv4 address
+coppeliasim_port = 23000  # TODO ZeroMQ port, default 23000
+coppeliasim_object_path = "/Sphere"  # TODO exact scene-tree marker path
+# TODO empty means CoppeliaSim world frame.
+coppeliasim_reference_object_path = ""
+coppeliasim_update_frequency_hz = 25.0  # TODO marker update rate [Hz]
 
 # TODO require each contributing eye point to lie in display area [0, 1]^2.
 require_gaze_on_display = True
@@ -140,7 +156,7 @@ write_data_csv_path = (
     Path(__file__).resolve().parent.parent
     / "data"
     / "raw_data"
-    / "ur5e_gaze_assisted_adm_2d_test.csv"
+    / "ur5e_gaze_assisted_adm_2d_protractor_test.csv"
 )
 
 
@@ -267,6 +283,187 @@ def map_coppelia_xy_to_robot_base(coppelia_xy_m):
         robot_xy_m[robot_axis] = signed_position_m
 
     return robot_xy_m
+
+
+def map_tcp_position_to_coppeliasim(tcp_position_xyz_m):
+    """Map UR5e base-frame TCP position [m] to CoppeliaSim [m]."""
+
+    robot_position_xy_m = tcp_position_xyz_m[:2]
+    coppelia_position_xy_m = [0.0, 0.0]
+
+    for coppelia_axis in range(2):
+        robot_axis = coppeliasim_axis_from_robot[coppelia_axis]
+        robot_position_m = robot_position_xy_m[robot_axis]
+        signed_position_m = (
+            coppeliasim_sign_from_robot[coppelia_axis]
+            * robot_position_m
+        )
+        coppelia_position_xy_m[coppelia_axis] = (
+            coppeliasim_offset_xy_m[coppelia_axis]
+            + signed_position_m
+        )
+
+    coppelia_z_m = (
+        coppeliasim_z_offset_m
+        + coppeliasim_z_sign_from_robot * tcp_position_xyz_m[2]
+    )
+    return [
+        coppelia_position_xy_m[0],
+        coppelia_position_xy_m[1],
+        coppelia_z_m,
+    ]
+
+
+def coppeliasim_trajectory_process(trajectory_queue, stop_event):
+    """Update the CoppeliaSim marker from an independent process."""
+
+    try:
+        from coppeliasim_zmqremoteapi_client import RemoteAPIClient
+    except ImportError as error:
+        print("CoppeliaSim bridge import failed:", error, flush=True)
+        return
+
+    try:
+        print(
+            "CoppeliaSim bridge connecting to",
+            coppeliasim_host,
+            "port",
+            coppeliasim_port,
+            flush=True,
+        )
+        client = RemoteAPIClient(
+            host=coppeliasim_host,
+            port=coppeliasim_port,
+        )
+        sim = client.require("sim")
+        target_object_handle = sim.getObject(coppeliasim_object_path)
+
+        reference_object_handle = -1
+
+        if coppeliasim_reference_object_path:
+            reference_object_handle = sim.getObject(
+                coppeliasim_reference_object_path
+            )
+
+        print(
+            "CoppeliaSim bridge found",
+            coppeliasim_object_path,
+            "with handle",
+            target_object_handle,
+            flush=True,
+        )
+
+        update_period_s = 1.0 / coppeliasim_update_frequency_hz
+        next_update_time_s = 0.0
+        first_sample = True
+
+        while not stop_event.is_set():
+            try:
+                trajectory_sample = trajectory_queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+
+            while True:
+                try:
+                    trajectory_sample = trajectory_queue.get_nowait()
+                except queue.Empty:
+                    break
+
+            current_time_s = time.monotonic()
+
+            if current_time_s < next_update_time_s:
+                continue
+
+            tcp_position_xyz_m = trajectory_sample[1]
+            coppelia_position_xyz_m = map_tcp_position_to_coppeliasim(
+                tcp_position_xyz_m
+            )
+            sim.setObjectPosition(
+                target_object_handle,
+                reference_object_handle,
+                coppelia_position_xyz_m,
+            )
+
+            if first_sample:
+                print(
+                    "CoppeliaSim first marker position [m]:",
+                    coppelia_position_xyz_m,
+                    flush=True,
+                )
+                first_sample = False
+
+            next_update_time_s = current_time_s + update_period_s
+    except Exception as error:
+        print("CoppeliaSim bridge stopped:", repr(error), flush=True)
+        traceback.print_exc()
+
+
+def start_coppeliasim_trajectory_process():
+    """Start the non-blocking CoppeliaSim marker process."""
+
+    if not send_coppeliasim_trajectory:
+        return None, None, None
+
+    process_context = multiprocessing.get_context("spawn")
+    trajectory_queue = process_context.Queue(maxsize=1)
+    stop_event = process_context.Event()
+    trajectory_process = process_context.Process(
+        target=coppeliasim_trajectory_process,
+        args=(trajectory_queue, stop_event),
+        name="coppeliasim_trajectory_process",
+    )
+    trajectory_process.start()
+
+    print(
+        "Started CoppeliaSim bridge process with PID",
+        trajectory_process.pid,
+        flush=True,
+    )
+    return trajectory_queue, stop_event, trajectory_process
+
+
+def publish_coppeliasim_trajectory_sample(
+    trajectory_queue,
+    controller_time_s,
+    tcp_position_xyz_m,
+):
+    """Queue only the newest TCP sample without blocking robot control."""
+
+    if trajectory_queue is None:
+        return
+
+    try:
+        while True:
+            trajectory_queue.get_nowait()
+    except queue.Empty:
+        pass
+
+    try:
+        trajectory_queue.put_nowait(
+            (controller_time_s, list(tcp_position_xyz_m))
+        )
+    except queue.Full:
+        pass
+
+
+def stop_coppeliasim_trajectory_process(
+    trajectory_queue,
+    stop_event,
+    trajectory_process,
+):
+    """Stop and release the CoppeliaSim marker process."""
+
+    if trajectory_process is None:
+        return
+
+    stop_event.set()
+    trajectory_process.join(timeout=2.0)
+
+    if trajectory_process.is_alive():
+        trajectory_process.terminate()
+        trajectory_process.join()
+
+    trajectory_queue.close()
 
 
 def map_gaze_ucs_to_robot_base(
@@ -430,8 +627,11 @@ def create_realtime_fixation_callback(
         combined_measurement = combine_valid_eye_measurements(gaze_sample)
 
         if combined_measurement is None:
+            # Do not invalidate here: keep the last completed fixation and
+            # let calculate_gaze_intent() age it out via
+            # maximum_fixation_age_s instead of snapping to fixed damping
+            # on every blink.
             reset_candidate()
-            invalidate_fixation()
             detector["previous_time_s"] = None
             detector["previous_direction"] = None
             detector["previous_point_robot_xy_m"] = None
@@ -522,8 +722,11 @@ def create_realtime_fixation_callback(
                         angular_velocity_deg_s
                     )
         else:
+            # Do not invalidate here: keep the last completed fixation and
+            # let calculate_gaze_intent() age it out via
+            # maximum_fixation_age_s instead of snapping to fixed damping
+            # on every saccade.
             reset_candidate()
-            invalidate_fixation()
 
         detector["previous_time_s"] = gaze_time_s
         detector["previous_direction"] = gaze_direction
@@ -1103,6 +1306,9 @@ def main():
     rtde_receive_interface = rtde_receive.RTDEReceiveInterface(robot_ip)
     tracker = None
     gaze_callback = None
+    trajectory_queue = None
+    simulator_stop_event = None
+    trajectory_process = None
 
     try:
         move_to_start_joint_configuration(rtde_control_interface)
@@ -1131,6 +1337,12 @@ def main():
         print("Workspace upper corner [m]:", workspace_upper_corner_m)
         print("Subject preparation time [s]:", subject_preparation_time_s)
         time.sleep(subject_preparation_time_s)
+
+        (
+            trajectory_queue,
+            simulator_stop_event,
+            trajectory_process,
+        ) = start_coppeliasim_trajectory_process()
 
         trial_clock = {"start_time_ns": None}
         tracker, gaze_callback = start_tobii_fixation_stream(
@@ -1217,10 +1429,23 @@ def main():
                     cbf_modified_velocity,
                 )
 
+                # Queue only; the ZeroMQ API runs in the child process.
+                publish_coppeliasim_trajectory_sample(
+                    trajectory_queue,
+                    time_s,
+                    tcp_position_xyz_m,
+                )
+
                 rtde_control_interface.waitPeriod(period_start)
     finally:
         if tracker is not None:
             stop_tobii_fixation_stream(tracker, gaze_callback)
+
+        stop_coppeliasim_trajectory_process(
+            trajectory_queue,
+            simulator_stop_event,
+            trajectory_process,
+        )
 
         if send_robot_commands:
             rtde_control_interface.speedStop(
@@ -1234,4 +1459,5 @@ def main():
 
 
 if __name__ == "__main__":
+    multiprocessing.freeze_support()
     main()
