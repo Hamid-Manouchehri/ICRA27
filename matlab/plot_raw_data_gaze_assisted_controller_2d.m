@@ -40,6 +40,7 @@ t = data.time_s;
 %% Useful logical masks
 fixation_valid = data.fixation_valid == 1;
 intent_active = data.intent_active == 1;
+intent_target_valid = data.intent_target_valid == 1;
 cbf_active = data.cbf_modified_velocity == 1;
 
 %% ================================================================
@@ -53,10 +54,18 @@ hold on;
 plot(data.tcp_x_m, data.tcp_y_m, 'k-', 'LineWidth', 1.5, 'DisplayName', ...
     'TCP trajectory');
 
-% Valid fixation positions
+% Valid fixation positions (raw, discrete, jumps between fixations)
 scatter(data.fixation_x_robot_m(fixation_valid), ...
     data.fixation_y_robot_m(fixation_valid), 10, 'filled', 'DisplayName', ...
     'Valid fixation');
+
+% Smoothed intent target position (cross-fades between fixations over
+% intent_target_smoothing_time_constant_s). Compare its path against the
+% discrete fixation dots above to check whether smoothing is reducing
+% the intent-direction jumps.
+plot(data.intent_smoothed_target_x_m(intent_target_valid), ...
+    data.intent_smoothed_target_y_m(intent_target_valid), 'm-', ...
+    'LineWidth', 1.0, 'DisplayName', 'Smoothed intent target');
 
 % Select only some active intent samples for arrows
 active_indices = find(intent_active);
