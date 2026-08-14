@@ -66,7 +66,7 @@ transition_csv_file = fullfile( ...
 
 % TODO calibration filename identifier. Change this to
 % switch between setup/subject/session calibration files.
-calibration_id = "tobii_coppelia_reference_irregular_shape_2.json";
+calibration_id = "tobii_coppelia_reference_calibration.json";
 
 calibration_json_file = fullfile(script_directory, ...
     '..', 'data', 'calibrations', calibration_id);

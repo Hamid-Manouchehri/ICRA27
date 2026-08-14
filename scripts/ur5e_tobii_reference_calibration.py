@@ -49,7 +49,7 @@ except ImportError:
 # -------------------- User Settings --------------------
 robot_ip = "192.168.1.100"  # TODO UR5e IP/hostname [valid robot address]
 
-# TODO calibration output path [file path]; overwritten after each
+# calibration output path [file path]; overwritten after each
 # successful run with the newly measured reference points.
 calibration_json_path = (
     Path(__file__).resolve().parent.parent
