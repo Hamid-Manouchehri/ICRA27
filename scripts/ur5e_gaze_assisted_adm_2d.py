@@ -77,14 +77,6 @@ write_data_csv_path = (
     / "ur5e_gaze_assisted_adm_2d_test.csv"
 )
 
-# TODO calibration file for this subject/setup.
-calibration_json_path = (
-    Path(__file__).resolve().parent.parent
-    / "data"
-    / "calibrations"
-    / "tobii_coppelia_reference_fine_gross_shape_2.json"
-)
-
 robot_ip = "192.168.1.100"  # TODO UR5e IPv4 address or hostname
 
 # TODO Workspace offsets [x, y] from the startup TCP [m]. Recommended motion
@@ -207,6 +199,14 @@ force_bias_n = [0.0, 0.0]
 force_raw_n = [0.0, 0.0]
 force_filtered_n = [0.0, 0.0]
 cart_velocity_command_m_s = [0.0, 0.0]
+
+# calibration file for the subject/setup.
+calibration_json_path = (
+    Path(__file__).resolve().parent.parent
+    / "data"
+    / "calibrations"
+    / "tobii_coppelia_reference_calibration.json"
+)
 
 # Bounded history of the most recent distinct completed fixations, oldest
 # first. Each entry: {"position_robot_xy_m", "duration_s", "update_time_s",
