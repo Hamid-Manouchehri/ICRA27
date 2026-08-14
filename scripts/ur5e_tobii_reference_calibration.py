@@ -8,7 +8,8 @@ Inputs:
 Outputs:
     In-memory robot_calibration_samples and tobii_calibration_samples lists.
     The calculated manual_tobii_reference_xy_mm and
-    manual_coppelia_reference_xy_m lists are also printed in MATLAB-ready form.
+    manual_coppelia_reference_xy_m lists are printed in MATLAB-ready form and
+    written to calibration_json_path, overwriting any previous calibration.
 
 Processing:
     The robot moves to the known joint pose. CoppeliaSim displays the reference
@@ -26,9 +27,11 @@ Dependencies:
     pip install --user coppeliasim-zmqremoteapi-client
 """
 
+import json
 import math
 import statistics
 import time
+from pathlib import Path
 
 try:
     import rtde_control
@@ -45,6 +48,15 @@ except ImportError:
 
 # -------------------- User Settings --------------------
 robot_ip = "192.168.1.100"  # TODO UR5e IP/hostname [valid robot address]
+
+# TODO calibration output path [file path]; overwritten after each
+# successful run with the newly measured reference points.
+calibration_json_path = (
+    Path(__file__).resolve().parent.parent
+    / "data"
+    / "calibrations"
+    / "tobii_coppelia_reference_calibration.json"
+)
 
 start_joint_q_deg = [  # TODO known joint angles [deg], within joint limits
     -77.64,
@@ -140,6 +152,36 @@ def median_xyz(samples_xyz):
         statistics.median(sample[axis] for sample in samples_xyz)
         for axis in range(3)
     ]
+
+
+def write_calibration_json(tobii_reference_xy_mm, coppelia_reference_xy_m):
+    """Overwrite calibration_json_path with the latest reference points.
+
+    Input:
+        tobii_reference_xy_mm: [x, y] Tobii UCS reference point [mm].
+        coppelia_reference_xy_m: [x, y] CoppeliaSim reference point [m].
+
+    Output:
+        calibration_json_path is created (with parent directories) or
+        overwritten with
+        {"manual_tobii_reference_xy_mm", "manual_coppelia_reference_xy_m"}.
+    """
+
+    calibration_data = {
+        "manual_tobii_reference_xy_mm": [
+            round(tobii_reference_xy_mm[0], 6),
+            round(tobii_reference_xy_mm[1], 6),
+        ],
+        "manual_coppelia_reference_xy_m": list(coppelia_reference_xy_m),
+    }
+
+    calibration_json_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(calibration_json_path, "w", encoding="utf-8") as json_file:
+        json.dump(calibration_data, json_file, indent=2)
+        json_file.write("\n")
+
+    print("Calibration JSON written to:", calibration_json_path)
 
 
 def connect_coppeliasim_marker():
@@ -354,6 +396,12 @@ def main():
             "of",
             len(tobii_calibration_samples),
         )
+
+        write_calibration_json(
+            manual_tobii_reference_xy_mm,
+            manual_coppelia_reference_xy_m,
+        )
+
         return (
             manual_tobii_reference_xy_mm,
             manual_coppelia_reference_xy_m,
