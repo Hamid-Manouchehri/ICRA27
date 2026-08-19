@@ -17,7 +17,7 @@
 %   CoppeliaSim x-y frame. A second figure contains separate velocity-vector
 %   and force-vector plots along the robot path. A third figure shows the
 %   fixation-direction similarity with mean force and mean velocity during each
-%   complete interval between consecutive fixations. A fourth figure overlays
+%   complete interval bet6ween consecutive fixations. A fourth figure overlays
 %   the corresponding unit gaze and transition-mean force/velocity directions
 %   at each fixation. A fifth figure shows the angular gaze-velocity histogram
 %   and I-VT threshold. A sixth figure shows all candidate fixation durations

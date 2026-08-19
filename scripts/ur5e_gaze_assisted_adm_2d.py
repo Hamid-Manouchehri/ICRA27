@@ -96,13 +96,13 @@ speed_stop_deceleration_m_s2 = 2.0  # TODO stop deceleration [m/s^2], 0.5 to 5
 virtual_mass_x_kg = 10.0  # TODO x virtual mass [kg], recommended 1 to 20
 virtual_mass_y_kg = 10.0  # TODO y virtual mass [kg], recommended 1 to 20
 
-fixed_damping_x_n_s_m = 200.0  # TODO fallback x damping [N s/m], 20 to 120
-fixed_damping_y_n_s_m = 200.0  # TODO fallback y damping [N s/m], 20 to 120
+fixed_damping_x_n_s_m = 80.0  # TODO fallback x damping [N s/m], 20 to 120
+fixed_damping_y_n_s_m = 80.0  # TODO fallback y damping [N s/m], 20 to 120
 
 # At high gaze confidence, forward motion along intent receives lower damping.
 # Perpendicular and opposite motion receive the non-intent damping.
-intent_forward_damping_n_s_m = 1.0  # TODO [N s/m], positive
-intent_other_damping_n_s_m = 200.0  # TODO [N s/m], positive
+intent_forward_damping_n_s_m = 10.0  # TODO [N s/m], positive
+intent_other_damping_n_s_m = 80.0  # TODO [N s/m], positive
 
 # TODO Maximum angle between the instantaneous filtered force and the
 # gaze-intent direction for any force-aligned damping reduction [deg].

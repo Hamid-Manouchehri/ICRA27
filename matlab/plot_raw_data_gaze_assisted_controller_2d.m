@@ -9,14 +9,10 @@ script_directory = fileparts(mfilename('fullpath'));
 
 csv_file = fullfile( ...
     script_directory, '..', 'data', 'raw_data', ...
-    'ur5e_gaze_assisted_adm_2d_protractor_newlogic_test.csv');
-
-% Must match Python controller parameters
-fixed_damping = 200.0;          % N.s/m
-intent_forward_damping = 1.0; % N.s/m
+    'ur5e_gaze_assisted_adm_2d_test.csv');
 
 % Must match Python fixation_velocity_threshold_deg_s
-fixation_velocity_threshold_deg_s = 80.0; % deg/s
+fixation_velocity_threshold_deg_s = 30.0; % deg/s
 
 % Must match Python force_intent_alignment_cutoff_deg
 force_intent_alignment_cutoff_deg = 80.0; % deg
@@ -48,18 +44,6 @@ fixation_valid = data.fixation_valid == 1;
 intent_active = data.total_influence > 0;
 intent_target_valid = data.intent_candidate_count > 0;
 cbf_active = data.cbf_modified_velocity == 1;
-
-% Effective damping in the FORWARD (instantaneous force) direction. Must
-% match calculate_damping_force() in the Python controller. total_influence
-% comes from calculate_blended_intent(), which combines every fresh
-% candidate fixation's confidence x distance_weight x alignment_weight as
-% a noisy-OR (1 - prod(1 - w_i)), not a single fixation's factors:
-%
-% B_eff = (1-total_influence)*B_fixed ...
-%       + total_influence*B_forward
-
-effective_forward_damping = (1 - data.total_influence) .* fixed_damping + ...
-    data.total_influence .* intent_forward_damping;
 
 %% ================================================================
 % Figure 1: TCP trajectory + fixation points + gaze intent direction
@@ -132,20 +116,20 @@ legend('Location', 'best');
 % straight line versus the half-circle in the protractor shape.
 nexttile;
 
-scatter(data.tcp_x_m, data.tcp_y_m, 10, effective_forward_damping, 'filled');
+scatter(data.tcp_x_m, data.tcp_y_m, 10, data.total_influence, 'filled');
 
 axis equal;
 grid on;
-damping_colorbar = colorbar;
-damping_colorbar.Label.String = 'Effective forward damping [N s/m]';
+influence_colorbar = colorbar;
+influence_colorbar.Label.String = 'Total influence [-]';
 
 xlabel('Robot base x [m]');
 ylabel('Robot base y [m]');
-title('TCP path colored by effective forward damping [N s/m]');
+title('TCP path colored by total influence [-]');
 
 
 %% ================================================================
-% Figure 2: Fixation confidence, influence, and effective damping
+% Figure 2: Fixation confidence, influence, and total influence
 % =================================================================
 
 figure('Name', 'Gaze confidence and damping modulation', 'Color', 'w');
@@ -202,22 +186,17 @@ ylabel('Intent');
 title('Gaze-intent activation');
 
 
-% ---- effective damping
+% ---- total influence
 nexttile;
 
-plot(t, effective_forward_damping, 'LineWidth', 1.3);
+plot(t, data.total_influence, 'LineWidth', 1.3);
 
-hold on;
-
-yline(fixed_damping, '--', 'Fixed damping');
-
-yline(intent_forward_damping, '--', 'Minimum forward damping');
-
+ylim([-0.05 1.05]);
 grid on;
 
 xlabel('Time [s]');
-ylabel('B_{forward} [N s/m]');
-title('Effective damping along gaze-intent direction');
+ylabel('Total influence [-]');
+title('Total influence (0 = fixed damping, 1 = forward damping)');
 
 
 %% ================================================================
@@ -265,7 +244,7 @@ xlabel('Time [s]');
 
 title('Force and TCP velocity projected onto gaze-intent direction');
 
-legend('F_{\parallel}', 'v_{\parallel}', 'Location', 'best');
+legend('F_{||}', 'v_{||}', 'Location', 'best');
 
 
 %% ================================================================
@@ -388,11 +367,9 @@ fprintf('Active gaze-intent samples: %.1f %%\n', 100 * mean(intent_active));
 
 fprintf('CBF modified samples: %d / %d\n', nnz(cbf_active), height(data));
 
-fprintf('Minimum effective forward damping: %.2f N.s/m\n', ...
-    min(effective_forward_damping));
+fprintf('Minimum total influence: %.2f\n', min(data.total_influence));
 
-fprintf('Maximum effective forward damping: %.2f N.s/m\n', ...
-    max(effective_forward_damping));
+fprintf('Maximum total influence: %.2f\n', max(data.total_influence));
 
 fprintf('Mean total influence: %.2f\n', mean(data.total_influence));
 
