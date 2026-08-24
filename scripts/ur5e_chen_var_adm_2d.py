@@ -205,7 +205,7 @@ write_data_csv_path = (
     Path(__file__).resolve().parent.parent /
     "data" /
     "raw_data" /
-    "ur5e_chen_var_adm_2d_test.csv"
+    "ur5e_chen_var_adm_2d_fine_gross_shape_s0.csv"
 )
 
 # TODO Tobii output CSV path [file path]; one row per Tobii callback.
@@ -215,7 +215,7 @@ tobii_data_csv_path = (
     Path(__file__).resolve().parent.parent /
     "data" /
     "raw_data" /
-    "tobii_chen_var_adm_2d_test.csv"
+    "tobii_chen_var_adm_2d_fine_gross_shape_s0.csv"
 )
 
 # --- Admittance model, paper (2) and (7) ---
