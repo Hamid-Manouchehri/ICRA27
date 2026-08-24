@@ -50,7 +50,7 @@ figure('Name', 'TCP trajectory and gaze intent', 'Color', 'w');
 hold on;
 
 % TCP path
-plot(data.tcp_x_m, data.tcp_y_m, 'k-', 'LineWidth', 1.5, 'DisplayName', ...
+plot(data.x_m, data.y_m, 'k-', 'LineWidth', 1.5, 'DisplayName', ...
     'TCP trajectory');
 
 % Valid fixation positions
@@ -72,7 +72,7 @@ if ~isempty(active_indices)
     arrow_dy = intent_arrow_length_m .* ...
         data.intent_direction_y(arrow_indices);
 
-    quiver(data.tcp_x_m(arrow_indices), data.tcp_y_m(arrow_indices), ...
+    quiver(data.x_m(arrow_indices), data.y_m(arrow_indices), ...
         arrow_dx, arrow_dy, 0, 'LineWidth', 1.2, 'DisplayName', ...
         'Gaze intent direction');
 end
@@ -83,11 +83,11 @@ end
 force_indices = 1:force_arrow_stride:height(data);
 
 force_arrow_dx = force_arrow_scale_m_per_n .* ...
-    data.Fx_filtered_N(force_indices);
+    data.Fx_filt_N(force_indices);
 force_arrow_dy = force_arrow_scale_m_per_n .* ...
-    data.Fy_filtered_N(force_indices);
+    data.Fy_filt_N(force_indices);
 
-quiver(data.tcp_x_m(force_indices), data.tcp_y_m(force_indices), ...
+quiver(data.x_m(force_indices), data.y_m(force_indices), ...
     force_arrow_dx, force_arrow_dy, 0, 'LineWidth', 1.0, 'Color', ...
     'g', 'DisplayName', 'Instantaneous force');
 
@@ -202,8 +202,8 @@ title('Effective damping along gaze-intent direction');
 %
 % F_parallel = F dot g_hat
 
-force_parallel_n = data.Fx_filtered_N .* data.intent_direction_x + ...
-    data.Fy_filtered_N .* data.intent_direction_y;
+force_parallel_n = data.Fx_filt_N .* data.intent_direction_x + ...
+    data.Fy_filt_N .* data.intent_direction_y;
 
 % Projection of actual TCP velocity onto intent direction:
 %
@@ -309,7 +309,7 @@ title('CBF intervention');
 
 figure('Name', 'Spatial damping map', 'Color', 'w');
 
-scatter(data.tcp_x_m, data.tcp_y_m, 10, effective_forward_damping, 'filled');
+scatter(data.x_m, data.y_m, 10, effective_forward_damping, 'filled');
 
 axis equal;
 grid on;

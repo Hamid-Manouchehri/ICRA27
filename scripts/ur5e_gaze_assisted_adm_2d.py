@@ -67,7 +67,7 @@ write_data_csv_path = (
     Path(__file__).resolve().parent.parent
     / "data"
     / "raw_data"
-    / "ur5e_gaze_assisted_adm_2d_protractor_modified_test4.csv"
+    / "ur5e_gaze_assisted_adm_2d_fine_gross_shape_s0.csv"
 )
 
 robot_ip = "192.168.1.100"  # TODO UR5e IPv4 address or hostname
@@ -140,7 +140,7 @@ calibration_json_path = (
     Path(__file__).resolve().parent.parent
     / "data"
     / "calibrations"
-    / "tobii_coppelia_reference_protractor_shape.json"
+    / "tobii_coppelia_reference_calibration_fine_gross_shape.json"
 )
 # TODO physical screen motion / robot motion [unitless], must be positive.
 screen_motion_per_robot_motion = 1.0
@@ -1319,11 +1319,11 @@ def write_csv_header(csv_writer):
         "host_monotonic_time_ns",
         "Fx_raw_N",
         "Fy_raw_N",
-        "Fx_filtered_N",
-        "Fy_filtered_N",
-        "tcp_x_m",
-        "tcp_y_m",
-        "tcp_z_m",
+        "Fx_filt_N",
+        "Fy_filt_N",
+        "x_m",
+        "y_m",
+        "z_m",
         "tcp_vx_actual_m_s",
         "tcp_vy_actual_m_s",
         "fixation_x_robot_m",

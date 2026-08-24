@@ -55,7 +55,7 @@ calibration_json_path = (
     Path(__file__).resolve().parent.parent
     / "data"
     / "calibrations"
-    / "tobii_coppelia_reference_calibration_fine_gross_shape_s0.json"
+    / "tobii_coppelia_reference_calibration_fine_gross_shape.json"
 )
 
 start_joint_q_deg = [  # TODO known joint angles [deg], within joint limits

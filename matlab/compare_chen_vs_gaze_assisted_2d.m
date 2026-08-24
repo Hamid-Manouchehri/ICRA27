@@ -59,8 +59,9 @@
 % Assumptions:
 %   Both CSVs were written by their respective scripts, so column names
 %   match those scripts' write_csv_header(). scripts/ur5e_gaze_assisted_
-%   adm_2d.py logs TCP position in the robot base frame only
-%   (tcp_x_m/tcp_y_m), not CoppeliaSim; it is mapped here with the same
+%   adm_2d.py logs TCP position in the robot base frame only (x_m/y_m,
+%   renamed from tcp_x_m/tcp_y_m for cross-controller column-name
+%   consistency), not CoppeliaSim; it is mapped here with the same
 %   coppeliasim_axis_from_robot/coppeliasim_sign_from_robot/
 %   coppeliasim_offset_xy_m transform that script itself uses (default
 %   identity, matching its current settings) -- VERIFY this matches
@@ -163,13 +164,13 @@ ga_table = readtable(gaze_assisted_csv_file, ...
     'VariableNamingRule', 'preserve', 'TextType', 'string');
 
 ga_time_s = ga_table.time_s;
-ga_force_x_n = ga_table.Fx_filtered_N;
-ga_force_y_n = ga_table.Fy_filtered_N;
+ga_force_x_n = ga_table.Fx_filt_N;
+ga_force_y_n = ga_table.Fy_filt_N;
 ga_force_magnitude_n = hypot(ga_force_x_n, ga_force_y_n);
 ga_speed_m_s = hypot(ga_table.tcp_vx_actual_m_s, ga_table.tcp_vy_actual_m_s);
 ga_total_influence = ga_table.total_influence;
 
-ga_tcp_xy_robot_m = [ga_table.tcp_x_m, ga_table.tcp_y_m];
+ga_tcp_xy_robot_m = [ga_table.x_m, ga_table.y_m];
 ga_tcp_xy_m = map_robot_xy_to_coppeliasim( ...
     ga_tcp_xy_robot_m, gaze_assisted_axis_from_robot, ...
     gaze_assisted_sign_from_robot, gaze_assisted_offset_xy_m);

@@ -190,7 +190,7 @@ write_data_csv_path = (
     Path(__file__).resolve().parent.parent /
     "data" /
     "raw_data" /
-    "ur5e_ying_var_adm_2d_log.csv"
+    "ur5e_ying_var_adm_2d_fine_gross_shape_s0.csv"
 )
 
 # TODO Tobii output CSV path [file path]; one row per Tobii callback.
@@ -200,7 +200,7 @@ tobii_data_csv_path = (
     Path(__file__).resolve().parent.parent /
     "data" /
     "raw_data" /
-    "tobii_ying_var_adm_2d_log.csv"
+    "tobii_ying_var_adm_2d_fine_gross_shape_s0.csv"
 )
 
 # --- Admittance model (2), (3); fuzzy damping (1), Table I "Rule A" ---
@@ -210,12 +210,12 @@ virtual_mass_kg = 10.0
 
 # TODO minimum fuzzy damping [N s/m], positive. Paper: "minimum damping
 # in the movement is 5 N s/m".
-damping_min_n_s_m = 5.0
+damping_min_n_s_m = 10.0
 
 # TODO maximum fuzzy damping reached by the 9-index table's smooth
 # interpolation [N s/m], must exceed damping_min_n_s_m. Paper: "maximum
 # damping in the movement is 150 N s/m".
-damping_movement_max_n_s_m = 150.0
+damping_movement_max_n_s_m = 100.0
 
 # TODO outer safety clamp applied after the table lookup [N s/m], must
 # be >= damping_movement_max_n_s_m. Paper: "200 N s/m is used to

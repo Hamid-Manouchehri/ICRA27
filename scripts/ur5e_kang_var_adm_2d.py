@@ -189,7 +189,7 @@ write_data_csv_path = (
     Path(__file__).resolve().parent.parent /
     "data" /
     "raw_data" /
-    "ur5e_kang_var_adm_2d_log.csv"
+    "ur5e_kang_var_adm_2d_fine_gross_shape_s0.csv"
 )
 
 # TODO Tobii output CSV path [file path]; one row per Tobii callback.
@@ -199,7 +199,7 @@ tobii_data_csv_path = (
     Path(__file__).resolve().parent.parent /
     "data" /
     "raw_data" /
-    "tobii_kang_var_adm_2d_log.csv"
+    "tobii_kang_var_adm_2d_gross_shape_s0.csv"
 )
 
 # --- Admittance model (3); direct intention (7) ---
@@ -210,8 +210,8 @@ virtual_mass_kg = 10.0
 
 # TODO damping bounds [N s/m] for c(v) in (7), both positive with
 # c_min < c_max. Paper's single-DOF verification uses [20, 60].
-c_min_n_s_m = 20.0
-c_max_n_s_m = 60.0
+c_min_n_s_m = 10.0
+c_max_n_s_m = 100.0
 
 # TODO standard force Fstd [N] in (7), positive. The comfortable force
 # level the operator sets by pushing harder or softer. Paper examples
