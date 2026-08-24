@@ -9,14 +9,13 @@ script_directory = fileparts(mfilename('fullpath'));
 
 csv_file = fullfile( ...
     script_directory, '..', 'data', 'raw_data', ...
-    'ur5e_gaze_assisted_adm_2d_protractor_modified_test1.csv');
-
-% Must match Python controller parameters
-fixed_damping = 200.0;          % N.s/m
-intent_forward_damping = 10.0; % N.s/m
+    'ur5e_gaze_assisted_adm_2d_test.csv');
 
 % Must match Python fixation_velocity_threshold_deg_s
-fixation_velocity_threshold_deg_s = 80.0; % deg/s
+fixation_velocity_threshold_deg_s = 30.0; % deg/s
+
+% Must match Python force_intent_alignment_cutoff_deg
+force_intent_alignment_cutoff_deg = 80.0; % deg
 
 % Plot every Nth active intent arrow to avoid clutter
 intent_arrow_stride = 100;
@@ -39,26 +38,39 @@ t = data.time_s;
 
 %% Useful logical masks
 fixation_valid = data.fixation_valid == 1;
-intent_active = data.intent_active == 1;
+% intent_active/intent_target_valid no longer exist as logged columns
+% (the controller now blends several candidate fixations); derive the
+% equivalent masks from what is logged.
+intent_active = data.total_influence > 0;
+intent_target_valid = data.intent_candidate_count > 0;
 cbf_active = data.cbf_modified_velocity == 1;
 
 %% ================================================================
 % Figure 1: TCP trajectory + fixation points + gaze intent direction
+% (left), and spatial damping heatmap (right)
 % =================================================================
 
-figure('Name', 'TCP trajectory and gaze intent', 'Color', 'w');
+figure('Name', 'TCP trajectory, gaze intent, and damping', 'Color', 'w');
+
+% subplot(1, 2, 1);
+tiledlayout(1, 2, 'TileSpacing', 'compact', 'Padding', 'compact'); 
+
+% ---- left: trajectory, fixation, intent, force
+nexttile;
 hold on;
 
 % TCP path
-plot(data.x_m, data.y_m, 'k-', 'LineWidth', 1.5, 'DisplayName', ...
+plot(data.tcp_x_m, data.tcp_y_m, 'k-', 'LineWidth', 1.5, 'DisplayName', ...
     'TCP trajectory');
 
-% Valid fixation positions
+% Valid fixation positions (raw, discrete, jumps between fixations)
 scatter(data.fixation_x_robot_m(fixation_valid), ...
-    data.fixation_y_robot_m(fixation_valid), 10, 'filled', 'DisplayName', ...
+    data.fixation_y_robot_m(fixation_valid), 30, 'filled', 'DisplayName', ...
     'Valid fixation');
 
-% Select only some active intent samples for arrows
+% Select only some active intent samples for arrows. intent_direction_x/y
+% is now the weight-blended direction across every buffered fixation
+% that agrees with the instantaneous force, not a single fixation.
 active_indices = find(intent_active);
 
 if ~isempty(active_indices)
@@ -72,9 +84,9 @@ if ~isempty(active_indices)
     arrow_dy = intent_arrow_length_m .* ...
         data.intent_direction_y(arrow_indices);
 
-    quiver(data.x_m(arrow_indices), data.y_m(arrow_indices), ...
+    quiver(data.tcp_x_m(arrow_indices), data.tcp_y_m(arrow_indices), ...
         arrow_dx, arrow_dy, 0, 'LineWidth', 1.2, 'DisplayName', ...
-        'Gaze intent direction');
+        'Blended gaze intent direction');
 end
 
 % Instantaneous filtered force at the TCP, subsampled for clarity. Drawn
@@ -83,11 +95,11 @@ end
 force_indices = 1:force_arrow_stride:height(data);
 
 force_arrow_dx = force_arrow_scale_m_per_n .* ...
-    data.Fx_filt_N(force_indices);
+    data.Fx_filtered_N(force_indices);
 force_arrow_dy = force_arrow_scale_m_per_n .* ...
-    data.Fy_filt_N(force_indices);
+    data.Fy_filtered_N(force_indices);
 
-quiver(data.x_m(force_indices), data.y_m(force_indices), ...
+quiver(data.tcp_x_m(force_indices), data.tcp_y_m(force_indices), ...
     force_arrow_dx, force_arrow_dy, 0, 'LineWidth', 1.0, 'Color', ...
     'g', 'DisplayName', 'Instantaneous force');
 
@@ -98,67 +110,65 @@ ylabel('Robot base y [m]');
 title('TCP trajectory, fixation targets, and gaze intent');
 legend('Location', 'best');
 
+% ---- right: spatial damping heatmap
+% Tests whether "light" (low damping, gaze-assisted) and "heavy"
+% (fixed damping) segments correlate with path geometry, e.g. the
+% straight line versus the half-circle in the protractor shape.
+nexttile;
+
+scatter(data.tcp_x_m, data.tcp_y_m, 10, data.total_influence, 'filled');
+
+axis equal;
+grid on;
+influence_colorbar = colorbar;
+influence_colorbar.Label.String = 'Total influence [-]';
+
+xlabel('Robot base x [m]');
+ylabel('Robot base y [m]');
+title('TCP path colored by total influence [-]');
+
 
 %% ================================================================
-% Figure 2: Fixation confidence, influence, and effective damping
+% Figure 2: Fixation confidence, influence, and total influence
 % =================================================================
-
-% Effective damping in the FORWARD (instantaneous force) direction. Must
-% match calculate_damping_force() in the Python controller, which blends
-% by total_influence = intent_influence * force_intent_alignment_weight,
-% not by intent_influence alone:
-%
-% B_eff = (1-total_influence)*B_fixed ...
-%       + total_influence*B_forward
-
-effective_forward_damping = (1 - data.total_influence) .* fixed_damping + ...
-    data.total_influence .* intent_forward_damping;
 
 figure('Name', 'Gaze confidence and damping modulation', 'Color', 'w');
 
 tiledlayout(4,1);
 
-% ---- confidence
+% ---- candidate count
+% Number of buffered fixations (out of intent_history_max_fixation_count)
+% currently contributing nonzero weight to the blend. 0 means fixed
+% damping; watch whether it's usually 1 (little different from the old
+% single-fixation design) or regularly >1 (buffering is actively
+% blending across multiple recent fixations).
 nexttile;
-plot(t, data.intent_confidence, 'LineWidth', 1.2);
+stairs(t, data.intent_candidate_count, 'LineWidth', 1.2);
+
+grid on;
+
+ylabel('Count');
+title('Contributing candidate fixations');
+
+
+% ---- top candidate angle vs alignment cutoff
+% force_intent_top_angle_deg is the force-to-direction angle of whichever
+% buffered candidate currently has the most weight. NaN when no candidate
+% contributes (force too small, no history, or every candidate too far
+% out of alignment/too low confidence/too close to the TCP).
+nexttile;
+
+plot(t, data.force_intent_top_angle_deg, 'LineWidth', 1.2);
 
 hold on;
 
-plot(t, data.intent_influence, 'LineWidth', 1.2);
+yline(force_intent_alignment_cutoff_deg, 'r--', 'Alignment cutoff');
 
-ylim([-0.05 1.05]);
+ylim([0 180]);
 grid on;
 
-ylabel('Value [-]');
-title('Gaze confidence and controller influence');
-
-legend('Intent confidence', 'Intent influence', 'Location', 'best');
-
-
-% ---- force-intent alignment, intent distance weight, combined influence
-% Shows the three factors multiplied together to form total_influence
-% (intent_influence x alignment_weight x distance_weight), so you can
-% see which one is limiting how close the controller gets to the light
-% (intent_forward_damping) value. distance_weight ramping to 0 near a
-% fixation close to the TCP explains the "jumpy near, free far" feel.
-nexttile;
-
-plot(t, data.force_intent_alignment_weight, 'LineWidth', 1.2);
-
-hold on;
-
-plot(t, data.intent_distance_weight, 'LineWidth', 1.2);
-
-plot(t, data.total_influence, 'LineWidth', 1.2);
-
-ylim([-0.05 1.05]);
-grid on;
-
-ylabel('Value [-]');
-title('Alignment weight, distance weight, and combined total influence');
-
-legend('Alignment weight', 'Distance weight', 'Total influence', ...
-    'Location', 'best');
+ylabel('Angle [deg]');
+title('Force-to-direction angle of the top-weighted candidate');
 
 
 % ---- intent active
@@ -176,22 +186,17 @@ ylabel('Intent');
 title('Gaze-intent activation');
 
 
-% ---- effective damping
+% ---- total influence
 nexttile;
 
-plot(t, effective_forward_damping, 'LineWidth', 1.3);
+plot(t, data.total_influence, 'LineWidth', 1.3);
 
-hold on;
-
-yline(fixed_damping, '--', 'Fixed damping');
-
-yline(intent_forward_damping, '--', 'Minimum forward damping');
-
+ylim([-0.05 1.05]);
 grid on;
 
 xlabel('Time [s]');
-ylabel('B_{forward} [N s/m]');
-title('Effective damping along gaze-intent direction');
+ylabel('Total influence [-]');
+title('Total influence (0 = fixed damping, 1 = forward damping)');
 
 
 %% ================================================================
@@ -202,8 +207,8 @@ title('Effective damping along gaze-intent direction');
 %
 % F_parallel = F dot g_hat
 
-force_parallel_n = data.Fx_filt_N .* data.intent_direction_x + ...
-    data.Fy_filt_N .* data.intent_direction_y;
+force_parallel_n = data.Fx_filtered_N .* data.intent_direction_x + ...
+    data.Fy_filtered_N .* data.intent_direction_y;
 
 % Projection of actual TCP velocity onto intent direction:
 %
@@ -239,7 +244,7 @@ xlabel('Time [s]');
 
 title('Force and TCP velocity projected onto gaze-intent direction');
 
-legend('F_{\parallel}', 'v_{\parallel}', 'Location', 'best');
+legend('F_{||}', 'v_{||}', 'Location', 'best');
 
 
 %% ================================================================
@@ -301,28 +306,7 @@ title('CBF intervention');
 
 
 %% ================================================================
-% Figure 5: Spatial map of effective damping along the traced path
-% =================================================================
-% Tests whether "light" (low damping, gaze-assisted) and "heavy"
-% (fixed damping) segments correlate with path geometry, e.g. the
-% straight line versus the half-circle in the protractor shape.
-
-figure('Name', 'Spatial damping map', 'Color', 'w');
-
-scatter(data.x_m, data.y_m, 10, effective_forward_damping, 'filled');
-
-axis equal;
-grid on;
-damping_colorbar = colorbar;
-damping_colorbar.Label.String = "effecive forward damping";
-
-xlabel('Robot base x [m]');
-ylabel('Robot base y [m]');
-title('TCP path colored by effective forward damping [N s/m]');
-
-
-%% ================================================================
-% Figure 6: Fixation angular velocity, duration, and I-VT threshold
+% Figure 5: Fixation angular velocity, duration, and I-VT threshold
 % =================================================================
 % If gaze angular velocity stays above fixation_velocity_threshold_deg_s
 % for long stretches (e.g. while visually pursuing the curved arc), the
@@ -383,33 +367,27 @@ fprintf('Active gaze-intent samples: %.1f %%\n', 100 * mean(intent_active));
 
 fprintf('CBF modified samples: %d / %d\n', nnz(cbf_active), height(data));
 
-fprintf('Minimum effective forward damping: %.2f N.s/m\n', ...
-    min(effective_forward_damping));
+fprintf('Minimum total influence: %.2f\n', min(data.total_influence));
 
-fprintf('Maximum effective forward damping: %.2f N.s/m\n', ...
-    max(effective_forward_damping));
+fprintf('Maximum total influence: %.2f\n', max(data.total_influence));
 
-fprintf('Mean intent influence (confidence only): %.2f\n', ...
-    mean(data.intent_influence));
+fprintf('Mean total influence: %.2f\n', mean(data.total_influence));
 
-fprintf('Mean force-intent alignment weight: %.2f\n', ...
-    mean(data.force_intent_alignment_weight));
+fprintf('Mean contributing candidate count: %.2f\n', ...
+    mean(data.intent_candidate_count));
 
-fprintf('Mean total influence (confidence x alignment): %.2f\n', ...
-    mean(data.total_influence));
+% No candidate contributed this sample: force too small
+% (minimum_force_magnitude_for_direction_n), no fresh fixation in the
+% history, or every buffered candidate scored zero weight (too far out
+% of alignment, too low confidence, or too close to the TCP).
+no_candidate_contributed = data.intent_candidate_count == 0;
 
-% force_intent_angle_deg is NaN whenever the filtered force magnitude was
-% below minimum_force_magnitude_for_direction_n, i.e. the direction was
-% judged too noisy to trust, separately from the angle itself being too
-% large. This distinguishes the two reasons alignment_weight can be 0.
-force_direction_undefined = isnan(data.force_intent_angle_deg);
-
-fprintf('Force direction undefined (force too small): %.1f %%\n', ...
-    100 * mean(force_direction_undefined));
+fprintf('No candidate contributed: %.1f %%\n', ...
+    100 * mean(no_candidate_contributed));
 
 % Duration of each contiguous gaze-intent-active window. Frequent short
 % windows (comparable to minimum_fixation_duration_s) indicate the
-% confidence-rebuild-per-fixation cycling described in Figure 6; long,
+% confidence-rebuild-per-fixation cycling described in Figure 5; long,
 % rare windows separated by long inactive gaps suggest the I-VT
 % classifier is not detecting fixations during parts of the path (e.g.
 % the arc).

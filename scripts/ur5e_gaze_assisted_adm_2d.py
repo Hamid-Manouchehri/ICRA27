@@ -22,6 +22,13 @@ Controller logic:
     within force_intent_alignment_cutoff_deg. This avoids giving low
     (compliant) damping along an axis the user is not actually pushing
     along.
+    Rather than trusting only the single latest fixation, the last
+    intent_history_max_fixation_count distinct fixations are kept as
+    candidate targets; each is scored by its own confidence, distance,
+    and force-alignment agreement, then combined into one continuous
+    total_influence and one weighted-blended intent direction (see
+    calculate_blended_intent). This avoids a discrete jump in intent
+    direction each time gaze moves to a new fixation.
     A velocity-level control barrier function (CBF) keeps the TCP inside an
     axis-aligned rectangular workspace.
 
@@ -67,7 +74,15 @@ write_data_csv_path = (
     Path(__file__).resolve().parent.parent
     / "data"
     / "raw_data"
-    / "ur5e_gaze_assisted_adm_2d_fine_gross_shape_s0.csv"
+    / "ur5e_gaze_assisted_adm_2d_chen_shape_test.csv"
+)
+
+# calibration file for the subject/setup.
+calibration_json_path = (
+    Path(__file__).resolve().parent.parent
+    / "data"
+    / "calibrations"
+    / "tobii_coppelia_reference_calibration_chen_shape.json"
 )
 
 robot_ip = "192.168.1.100"  # TODO UR5e IPv4 address or hostname
@@ -88,13 +103,14 @@ speed_stop_deceleration_m_s2 = 2.0  # TODO stop deceleration [m/s^2], 0.5 to 5
 # Fixed fallback admittance: M*v_dot + B*v = F.
 virtual_mass_x_kg = 10.0  # TODO x virtual mass [kg], recommended 1 to 20
 virtual_mass_y_kg = 10.0  # TODO y virtual mass [kg], recommended 1 to 20
-fixed_damping_x_n_s_m = 200.0  # TODO fallback x damping [N s/m], 20 to 120
-fixed_damping_y_n_s_m = 200.0  # TODO fallback y damping [N s/m], 20 to 120
+
+fixed_damping_x_n_s_m = 100.0  # TODO fallback x damping [N s/m], 20 to 120
+fixed_damping_y_n_s_m = 100.0  # TODO fallback y damping [N s/m], 20 to 120
 
 # At high gaze confidence, forward motion along intent receives lower damping.
 # Perpendicular and opposite motion receive the non-intent damping.
-intent_forward_damping_n_s_m = 1.0  # TODO [N s/m], positive
-intent_other_damping_n_s_m = 200.0  # TODO [N s/m], positive
+intent_forward_damping_n_s_m = 10.0  # TODO [N s/m], positive
+intent_other_damping_n_s_m = 100.0  # TODO [N s/m], positive
 
 # TODO Maximum angle between the instantaneous filtered force and the
 # gaze-intent direction for any force-aligned damping reduction [deg].
@@ -134,14 +150,15 @@ minimum_intent_distance_m = 0.005
 # minimum_intent_distance_m, because a fixation close to the TCP gives a
 # short, noise-sensitive direction vector.
 full_confidence_intent_distance_m = 0.03
+# TODO Maximum number of recent distinct fixations kept as candidate
+# intent targets [count], recommended 3 to 8. Kept deliberately small:
+# a long history makes it likely that some past fixation agrees with
+# whatever direction the user is currently pushing, which would weaken
+# gaze as a meaningful signal. Each candidate still individually needs
+# maximum_fixation_age_s freshness and force_intent_alignment_cutoff_deg
+# agreement to contribute.
+intent_history_max_fixation_count = 5
 
-# TODO calibration file for this subject/setup.
-calibration_json_path = (
-    Path(__file__).resolve().parent.parent
-    / "data"
-    / "calibrations"
-    / "tobii_coppelia_reference_calibration_fine_gross_shape.json"
-)
 # TODO physical screen motion / robot motion [unitless], must be positive.
 screen_motion_per_robot_motion = 1.0
 # TODO Tobii UCS x/y signs in CoppeliaSim, each -1 or +1.
@@ -191,14 +208,12 @@ force_raw_n = [0.0, 0.0]
 force_filtered_n = [0.0, 0.0]
 cart_velocity_command_m_s = [0.0, 0.0]
 
+# Bounded history of the most recent distinct completed fixations, oldest
+# first. Each entry: {"position_robot_xy_m", "duration_s", "update_time_s",
+# "angular_velocity_deg_s"}. A fixation still being dwelled on updates the
+# newest entry in place; a new fixation candidate appends a new entry.
 fixation_lock = threading.Lock()
-latest_fixation = {
-    "valid": False,
-    "position_robot_xy_m": [math.nan, math.nan],
-    "duration_s": 0.0,
-    "update_time_s": math.nan,
-    "angular_velocity_deg_s": math.nan,
-}
+fixation_history = deque(maxlen=intent_history_max_fixation_count)
 
 
 def handle_stop_signal(_signal_number, _frame):
@@ -620,7 +635,7 @@ def create_realtime_fixation_callback(
     tobii_reference_xy_mm,
     coppelia_reference_xy_m,
 ):
-    """Create a non-RTDE Tobii callback that updates the latest fixation."""
+    """Create a non-RTDE Tobii callback that updates the fixation history."""
 
     detector = {
         "previous_time_s": None,
@@ -629,16 +644,14 @@ def create_realtime_fixation_callback(
         "candidate_start_time_s": None,
         "candidate_point_sum_robot_xy_m": [0.0, 0.0],
         "candidate_sample_count": 0,
+        "candidate_committed": False,
     }
 
     def reset_candidate():
         detector["candidate_start_time_s"] = None
         detector["candidate_point_sum_robot_xy_m"] = [0.0, 0.0]
         detector["candidate_sample_count"] = 0
-
-    def invalidate_fixation():
-        with fixation_lock:
-            latest_fixation["valid"] = False
+        detector["candidate_committed"] = False
 
     def gaze_callback(gaze_sample):
         host_time_ns = time.perf_counter_ns()
@@ -651,8 +664,8 @@ def create_realtime_fixation_callback(
         combined_measurement = combine_valid_eye_measurements(gaze_sample)
 
         if combined_measurement is None:
-            # Do not invalidate here: keep the last completed fixation and
-            # let calculate_gaze_intent() age it out via
+            # Do not remove history entries here: let
+            # evaluate_fixation_candidate() age each one out via
             # maximum_fixation_age_s instead of snapping to fixed damping
             # on every blink.
             reset_candidate()
@@ -734,20 +747,29 @@ def create_realtime_fixation_callback(
                 mean_fixation_x_m = point_sum[0] / sample_count
                 mean_fixation_y_m = point_sum[1] / sample_count
 
-                with fixation_lock:
-                    latest_fixation["valid"] = True
-                    latest_fixation["position_robot_xy_m"] = [
+                fixation_entry = {
+                    "position_robot_xy_m": [
                         mean_fixation_x_m,
                         mean_fixation_y_m,
-                    ]
-                    latest_fixation["duration_s"] = fixation_duration_s
-                    latest_fixation["update_time_s"] = gaze_time_s
-                    latest_fixation["angular_velocity_deg_s"] = (
-                        angular_velocity_deg_s
-                    )
+                    ],
+                    "duration_s": fixation_duration_s,
+                    "update_time_s": gaze_time_s,
+                    "angular_velocity_deg_s": angular_velocity_deg_s,
+                }
+
+                with fixation_lock:
+                    if detector["candidate_committed"]:
+                        # Same ongoing fixation: refine the newest entry
+                        # in place instead of growing the history.
+                        fixation_history[-1] = fixation_entry
+                    else:
+                        # First time this candidate reached the minimum
+                        # duration: it becomes a new distinct entry.
+                        fixation_history.append(fixation_entry)
+                        detector["candidate_committed"] = True
         else:
-            # Do not invalidate here: keep the last completed fixation and
-            # let calculate_gaze_intent() age it out via
+            # Do not remove history entries here: let
+            # evaluate_fixation_candidate() age each one out via
             # maximum_fixation_age_s instead of snapping to fixed damping
             # on every saccade.
             reset_candidate()
@@ -799,23 +821,57 @@ def stop_tobii_fixation_stream(tracker, gaze_callback):
     )
 
 
-def read_latest_fixation():
-    """Copy the latest fixation without holding its lock in the RTDE loop."""
+def read_fixation_history():
+    """Copy the fixation history without holding its lock in the RTDE loop.
+
+    Returns:
+        list of fixation dicts, oldest first, each with
+        position_robot_xy_m, duration_s, update_time_s, and
+        angular_velocity_deg_s. Empty when no fixation has completed yet.
+    """
 
     with fixation_lock:
-        fixation = {
-            "valid": latest_fixation["valid"],
-            "position_robot_xy_m": list(
-                latest_fixation["position_robot_xy_m"]
-            ),
-            "duration_s": latest_fixation["duration_s"],
-            "update_time_s": latest_fixation["update_time_s"],
-            "angular_velocity_deg_s": latest_fixation[
-                "angular_velocity_deg_s"
-            ],
+        history_copy = [
+            {
+                "position_robot_xy_m": list(entry["position_robot_xy_m"]),
+                "duration_s": entry["duration_s"],
+                "update_time_s": entry["update_time_s"],
+                "angular_velocity_deg_s": entry["angular_velocity_deg_s"],
+            }
+            for entry in fixation_history
+        ]
+
+    return history_copy
+
+
+def summarize_most_recent_fixation(fixation_history_list, current_time_s):
+    """Return the most recently updated buffered fixation for logging.
+
+    Used only for the raw fixation_* CSV columns; it does not feed back
+    into control, which instead uses every fresh, in-workspace history
+    entry via calculate_gaze_intent_candidates(). Returns valid=False
+    with NaN fields when the history is empty.
+    """
+
+    if not fixation_history_list:
+        return {
+            "valid": False,
+            "position_robot_xy_m": [math.nan, math.nan],
+            "duration_s": math.nan,
+            "age_s": math.nan,
+            "angular_velocity_deg_s": math.nan,
         }
 
-    return fixation
+    most_recent_entry = fixation_history_list[-1]
+    return {
+        "valid": True,
+        "position_robot_xy_m": most_recent_entry["position_robot_xy_m"],
+        "duration_s": most_recent_entry["duration_s"],
+        "age_s": current_time_s - most_recent_entry["update_time_s"],
+        "angular_velocity_deg_s": (
+            most_recent_entry["angular_velocity_deg_s"]
+        ),
+    }
 
 
 def read_tcp_position_xyz(rtde_receive_interface):
@@ -951,38 +1007,39 @@ def calculate_intent_influence(fixation_confidence):
     return fixation_confidence
 
 
-def calculate_gaze_intent(
-    recent_tcp_positions_xy_m,
-    fixation,
+def evaluate_fixation_candidate(
+    fixation_entry,
+    mean_tcp_xy_m,
     current_time_s,
     workspace_lower_corner_m,
     workspace_upper_corner_m,
 ):
-    """Calculate normalized TCP-to-fixation intent in robot base x-y."""
+    """Evaluate one buffered fixation as a candidate intent target.
 
-    intent = {
-        "target_xy_m": [math.nan, math.nan],
+    Returns a dict with target_valid, direction_xy, distance_m,
+    distance_weight, confidence, and gaze_influence. target_valid stays
+    False (and the rest at safe defaults) when the candidate is stale
+    (maximum_fixation_age_s), outside the workspace, or too close to
+    the TCP (minimum_intent_distance_m) to give a reliable direction.
+    """
+
+    candidate = {
+        "target_valid": False,
         "direction_xy": [0.0, 0.0],
         "distance_m": math.nan,
         "distance_weight": 0.0,
-        "fixation_age_s": math.nan,
         "confidence": 0.0,
-        "influence": 0.0,
-        "target_valid": False,
-        "active": False,
+        "gaze_influence": 0.0,
+        "fixation_age_s": math.nan,
     }
 
-    if not fixation["valid"]:
-        return intent
-
-    fixation_age_s = current_time_s - fixation["update_time_s"]
-    intent["fixation_age_s"] = fixation_age_s
+    fixation_age_s = current_time_s - fixation_entry["update_time_s"]
+    candidate["fixation_age_s"] = fixation_age_s
 
     if fixation_age_s > maximum_fixation_age_s:
-        return intent
+        return candidate
 
-    fixation_target_xy_m = fixation["position_robot_xy_m"]
-    intent["target_xy_m"] = fixation_target_xy_m
+    fixation_target_xy_m = fixation_entry["position_robot_xy_m"]
 
     target_inside_workspace = point_is_inside_rectangle(
         fixation_target_xy_m,
@@ -991,7 +1048,48 @@ def calculate_gaze_intent(
     )
 
     if not target_inside_workspace:
-        return intent
+        return candidate
+
+    displacement_x_m = fixation_target_xy_m[0] - mean_tcp_xy_m[0]
+    displacement_y_m = fixation_target_xy_m[1] - mean_tcp_xy_m[1]
+    displacement_xy_m = [displacement_x_m, displacement_y_m]
+    distance_m = vector_norm_2d(displacement_xy_m)
+    candidate["distance_m"] = distance_m
+
+    if distance_m < minimum_intent_distance_m:
+        return candidate
+
+    candidate["target_valid"] = True
+    candidate["direction_xy"] = [
+        displacement_x_m / distance_m,
+        displacement_y_m / distance_m,
+    ]
+    candidate["distance_weight"] = calculate_intent_distance_weight(
+        distance_m
+    )
+
+    confidence = calculate_fixation_confidence(fixation_entry["duration_s"])
+    candidate["confidence"] = confidence
+    candidate["gaze_influence"] = calculate_intent_influence(confidence)
+    return candidate
+
+
+def calculate_gaze_intent_candidates(
+    recent_tcp_positions_xy_m,
+    fixation_history_list,
+    current_time_s,
+    workspace_lower_corner_m,
+    workspace_upper_corner_m,
+):
+    """Evaluate every buffered fixation as a candidate intent target.
+
+    Returns a list of target_valid candidate dicts (see
+    evaluate_fixation_candidate), oldest first. Empty when the history
+    is empty or no buffered fixation is currently a valid target.
+    """
+
+    if not fixation_history_list:
+        return []
 
     tcp_position_sum_x_m = 0.0
     tcp_position_sum_y_m = 0.0
@@ -1001,98 +1099,153 @@ def calculate_gaze_intent(
         tcp_position_sum_y_m += tcp_position_xy_m[1]
 
     tcp_sample_count = len(recent_tcp_positions_xy_m)
-    mean_tcp_x_m = tcp_position_sum_x_m / tcp_sample_count
-    mean_tcp_y_m = tcp_position_sum_y_m / tcp_sample_count
-
-    intent_displacement_x_m = fixation_target_xy_m[0] - mean_tcp_x_m
-    intent_displacement_y_m = fixation_target_xy_m[1] - mean_tcp_y_m
-    intent_displacement_xy_m = [
-        intent_displacement_x_m,
-        intent_displacement_y_m,
+    mean_tcp_xy_m = [
+        tcp_position_sum_x_m / tcp_sample_count,
+        tcp_position_sum_y_m / tcp_sample_count,
     ]
-    intent_distance_m = vector_norm_2d(intent_displacement_xy_m)
-    intent["distance_m"] = intent_distance_m
 
-    if intent_distance_m < minimum_intent_distance_m:
-        return intent
+    candidates = []
 
-    intent_direction_x = intent_displacement_x_m / intent_distance_m
-    intent_direction_y = intent_displacement_y_m / intent_distance_m
-    intent["direction_xy"] = [
-        intent_direction_x,
-        intent_direction_y,
-    ]
-    intent["target_valid"] = True
-    intent["distance_weight"] = calculate_intent_distance_weight(
-        intent_distance_m
-    )
+    for fixation_entry in fixation_history_list:
+        candidate = evaluate_fixation_candidate(
+            fixation_entry,
+            mean_tcp_xy_m,
+            current_time_s,
+            workspace_lower_corner_m,
+            workspace_upper_corner_m,
+        )
 
-    confidence = calculate_fixation_confidence(fixation["duration_s"])
-    influence = calculate_intent_influence(confidence)
-    intent["confidence"] = confidence
-    intent["influence"] = influence
-    intent["active"] = influence > 0.0
-    return intent
+        if candidate["target_valid"]:
+            candidates.append(candidate)
+
+    return candidates
 
 
-def calculate_force_intent_alignment_weight(force_filtered_n, intent):
-    """Weight in [0, 1] for filtered-force agreement with gaze intent.
+def calculate_blended_intent(candidates, force_filtered_n):
+    """Blend candidate intent targets, weighted by force agreement.
 
-    Returns 0.0 (fixed damping only) when the intent direction is not
-    valid, when the filtered force magnitude is below
-    minimum_force_magnitude_for_direction_n (its direction is then
-    undefined), or when the angle between the filtered force and the
-    intent direction is at or beyond force_intent_alignment_cutoff_deg.
-    Otherwise ramps linearly from 1 (0 deg apart) to 0
-    (force_intent_alignment_cutoff_deg apart), matching the linear-ramp
-    style of calculate_fixation_confidence(). This weight is continuous
-    in the force angle, so it does not introduce a hard on/off switch.
+    Each candidate's weight is gaze_influence x distance_weight x a
+    linear force-alignment ramp (1 at 0 deg apart, 0 at
+    force_intent_alignment_cutoff_deg apart) -- the same three factors
+    used for a single fixation before this history-based design existed.
+    Candidates combine as total_influence = 1 - prod(1 - w_i), a
+    "noisy-OR": this reduces to exactly the old single-candidate formula
+    when only one candidate contributes, and lets multiple corroborating
+    fixations reinforce trust without a discrete winner-take-all switch
+    between them.
 
     Returns:
-        alignment_weight: scalar in [0, 1].
-        force_direction_xy: unit vector, [0, 0] when undefined.
-        angle_deg: angle between force and intent direction, NaN when
-            undefined.
+        force_direction_xy: unit vector, [0, 0] when the filtered force
+            magnitude is below minimum_force_magnitude_for_direction_n.
+        blended_direction_xy: weight-normalized average of contributing
+            candidate directions, [0, 0] when none contribute.
+        total_influence: scalar in [0, 1].
+        candidate_count: number of candidates with nonzero weight.
+        top_angle_deg: force-to-direction angle of the highest-weighted
+            candidate, NaN when none contribute. Logged for inspection
+            only; it does not feed back into control.
     """
 
-    force_direction_xy = [0.0, 0.0]
-    angle_deg = math.nan
-
-    if not intent["target_valid"]:
-        return 0.0, force_direction_xy, angle_deg
+    no_force_result = ([0.0, 0.0], [0.0, 0.0], 0.0, 0, math.nan)
 
     force_magnitude_n = vector_norm_2d(force_filtered_n)
 
     if force_magnitude_n < minimum_force_magnitude_for_direction_n:
-        return 0.0, force_direction_xy, angle_deg
+        return no_force_result
 
-    force_direction_x = force_filtered_n[0] / force_magnitude_n
-    force_direction_y = force_filtered_n[1] / force_magnitude_n
-    force_direction_xy = [force_direction_x, force_direction_y]
+    force_direction_xy = [
+        force_filtered_n[0] / force_magnitude_n,
+        force_filtered_n[1] / force_magnitude_n,
+    ]
 
-    intent_x = intent["direction_xy"][0]
-    intent_y = intent["direction_xy"][1]
+    if not candidates:
+        return (force_direction_xy, [0.0, 0.0], 0.0, 0, math.nan)
 
-    cos_angle = force_direction_x * intent_x + force_direction_y * intent_y
-    cos_angle = clamp_value(cos_angle, -1.0, 1.0)
-    angle_deg = math.degrees(math.acos(cos_angle))
+    weighted_direction_sum_x = 0.0
+    weighted_direction_sum_y = 0.0
+    weight_sum = 0.0
+    one_minus_weight_product = 1.0
+    contributing_count = 0
+    top_weight = 0.0
+    top_angle_deg = math.nan
 
-    raw_weight = 1.0 - angle_deg / force_intent_alignment_cutoff_deg
-    alignment_weight = clamp_value(raw_weight, 0.0, 1.0)
+    for candidate in candidates:
+        candidate_dir_x = candidate["direction_xy"][0]
+        candidate_dir_y = candidate["direction_xy"][1]
 
-    return alignment_weight, force_direction_xy, angle_deg
+        cos_angle = (
+            force_direction_xy[0] * candidate_dir_x
+            + force_direction_xy[1] * candidate_dir_y
+        )
+        cos_angle = clamp_value(cos_angle, -1.0, 1.0)
+        angle_deg = math.degrees(math.acos(cos_angle))
+
+        raw_alignment_weight = (
+            1.0 - angle_deg / force_intent_alignment_cutoff_deg
+        )
+        alignment_weight = clamp_value(raw_alignment_weight, 0.0, 1.0)
+
+        candidate_weight = (
+            candidate["gaze_influence"]
+            * candidate["distance_weight"]
+            * alignment_weight
+        )
+        one_minus_weight_product *= 1.0 - candidate_weight
+
+        if candidate_weight <= 0.0:
+            continue
+
+        contributing_count += 1
+        weight_sum += candidate_weight
+        weighted_direction_sum_x += candidate_weight * candidate_dir_x
+        weighted_direction_sum_y += candidate_weight * candidate_dir_y
+
+        if candidate_weight > top_weight:
+            top_weight = candidate_weight
+            top_angle_deg = angle_deg
+
+    total_influence = 1.0 - one_minus_weight_product
+
+    if weight_sum <= 0.0:
+        return (
+            force_direction_xy,
+            [0.0, 0.0],
+            total_influence,
+            contributing_count,
+            top_angle_deg,
+        )
+
+    blended_direction_xy = [
+        weighted_direction_sum_x / weight_sum,
+        weighted_direction_sum_y / weight_sum,
+    ]
+    blended_direction_norm = vector_norm_2d(blended_direction_xy)
+
+    if blended_direction_norm > 0.0:
+        blended_direction_xy = [
+            blended_direction_xy[0] / blended_direction_norm,
+            blended_direction_xy[1] / blended_direction_norm,
+        ]
+
+    return (
+        force_direction_xy,
+        blended_direction_xy,
+        total_influence,
+        contributing_count,
+        top_angle_deg,
+    )
 
 
 def calculate_damping_force(force_direction_xy, total_influence):
     """Calculate fixed or force-direction-aligned damping force.
 
-    total_influence in [0, 1] is the product of gaze-fixation confidence
-    (calculate_intent_influence) and force-intent alignment weight
-    (calculate_force_intent_alignment_weight), so anisotropic damping
+    total_influence in [0, 1] comes from calculate_blended_intent(),
+    which combines every fresh candidate fixation's confidence,
+    distance, and force-alignment agreement, so anisotropic damping
     only engages when gaze is confident AND the applied force agrees
-    with the gaze-intent direction. The anisotropic (low/high damping)
-    axis is the instantaneous filtered force direction, not the gaze
-    direction.
+    with some recent gaze-intent direction. The anisotropic (low/high
+    damping) axis is the instantaneous filtered force direction, not
+    the gaze direction.
     """
 
     velocity_x_m_s = cart_velocity_command_m_s[0]
@@ -1161,17 +1314,18 @@ def calculate_damping_force(force_direction_xy, total_influence):
     return [damping_force_x_n, damping_force_y_n]
 
 
-def integrate_admittance(intent, sample_period_s):
+def integrate_admittance(candidates, sample_period_s):
     """Integrate M*v_dot + damping_force = measured_force."""
 
     global cart_velocity_command_m_s
 
-    alignment_weight, force_direction_xy, force_intent_angle_deg = (
-        calculate_force_intent_alignment_weight(force_filtered_n, intent)
-    )
-    total_influence = (
-        intent["influence"] * alignment_weight * intent["distance_weight"]
-    )
+    (
+        force_direction_xy,
+        blended_direction_xy,
+        total_influence,
+        candidate_count,
+        top_angle_deg,
+    ) = calculate_blended_intent(candidates, force_filtered_n)
 
     damping_force_n = calculate_damping_force(
         force_direction_xy,
@@ -1201,13 +1355,14 @@ def integrate_admittance(intent, sample_period_s):
     )
     cart_velocity_command_m_s = nominal_velocity_m_s
 
-    alignment_info = {
-        "force_intent_angle_deg": force_intent_angle_deg,
-        "alignment_weight": alignment_weight,
+    intent_info = {
+        "direction_xy": blended_direction_xy,
         "total_influence": total_influence,
+        "candidate_count": candidate_count,
+        "top_angle_deg": top_angle_deg,
     }
 
-    return damping_force_n, list(nominal_velocity_m_s), alignment_info
+    return damping_force_n, list(nominal_velocity_m_s), intent_info
 
 
 def apply_rectangular_cbf(
@@ -1319,11 +1474,11 @@ def write_csv_header(csv_writer):
         "host_monotonic_time_ns",
         "Fx_raw_N",
         "Fy_raw_N",
-        "Fx_filt_N",
-        "Fy_filt_N",
-        "x_m",
-        "y_m",
-        "z_m",
+        "Fx_filtered_N",
+        "Fy_filtered_N",
+        "tcp_x_m",
+        "tcp_y_m",
+        "tcp_z_m",
         "tcp_vx_actual_m_s",
         "tcp_vy_actual_m_s",
         "fixation_x_robot_m",
@@ -1332,16 +1487,10 @@ def write_csv_header(csv_writer):
         "fixation_valid",
         "fixation_age_s",
         "fixation_angular_velocity_deg_s",
-        "intent_target_valid",
-        "intent_active",
-        "intent_confidence",
-        "intent_influence",
+        "intent_candidate_count",
         "intent_direction_x",
         "intent_direction_y",
-        "intent_distance_m",
-        "intent_distance_weight",
-        "force_intent_angle_deg",
-        "force_intent_alignment_weight",
+        "force_intent_top_angle_deg",
         "total_influence",
         "damping_force_x_N",
         "damping_force_y_N",
@@ -1360,9 +1509,8 @@ def write_csv_row(
     host_time_ns,
     tcp_position_xyz_m,
     tcp_actual_velocity,
-    fixation,
-    intent,
-    alignment_info,
+    fixation_summary,
+    intent_info,
     damping_force_n,
     nominal_velocity_xy_m_s,
     safe_velocity_xy_m_s,
@@ -1370,7 +1518,7 @@ def write_csv_row(
 ):
     """Write one synchronized controller sample."""
 
-    fixation_position_xy_m = fixation["position_robot_xy_m"]
+    fixation_position_xy_m = fixation_summary["position_robot_xy_m"]
 
     csv_writer.writerow([
         time_s,
@@ -1386,21 +1534,15 @@ def write_csv_row(
         tcp_actual_velocity[1],
         fixation_position_xy_m[0],
         fixation_position_xy_m[1],
-        fixation["duration_s"],
-        int(fixation["valid"]),
-        intent["fixation_age_s"],
-        fixation["angular_velocity_deg_s"],
-        int(intent["target_valid"]),
-        int(intent["active"]),
-        intent["confidence"],
-        intent["influence"],
-        intent["direction_xy"][0],
-        intent["direction_xy"][1],
-        intent["distance_m"],
-        intent["distance_weight"],
-        alignment_info["force_intent_angle_deg"],
-        alignment_info["alignment_weight"],
-        alignment_info["total_influence"],
+        fixation_summary["duration_s"],
+        int(fixation_summary["valid"]),
+        fixation_summary["age_s"],
+        fixation_summary["angular_velocity_deg_s"],
+        intent_info["candidate_count"],
+        intent_info["direction_xy"][0],
+        intent_info["direction_xy"][1],
+        intent_info["top_angle_deg"],
+        intent_info["total_influence"],
         damping_force_n[0],
         damping_force_n[1],
         nominal_velocity_xy_m_s[0],
@@ -1521,10 +1663,14 @@ def main():
                 )
                 recent_tcp_positions_xy_m.append(tcp_position_xy_m)
 
-                fixation = read_latest_fixation()
-                intent = calculate_gaze_intent(
+                fixation_history_list = read_fixation_history()
+                fixation_summary = summarize_most_recent_fixation(
+                    fixation_history_list,
+                    time_s,
+                )
+                candidates = calculate_gaze_intent_candidates(
                     recent_tcp_positions_xy_m,
-                    fixation,
+                    fixation_history_list,
                     time_s,
                     workspace_lower_corner_m,
                     workspace_upper_corner_m,
@@ -1534,8 +1680,8 @@ def main():
                 (
                     damping_force_n,
                     nominal_velocity_xy_m_s,
-                    alignment_info,
-                ) = integrate_admittance(intent, sample_period_s)
+                    intent_info,
+                ) = integrate_admittance(candidates, sample_period_s)
                 safe_velocity_xy_m_s, cbf_modified_velocity = (
                     apply_rectangular_cbf(
                         tcp_position_xy_m,
@@ -1557,9 +1703,8 @@ def main():
                     host_time_ns,
                     tcp_position_xyz_m,
                     tcp_actual_velocity,
-                    fixation,
-                    intent,
-                    alignment_info,
+                    fixation_summary,
+                    intent_info,
                     damping_force_n,
                     nominal_velocity_xy_m_s,
                     safe_velocity_xy_m_s,
