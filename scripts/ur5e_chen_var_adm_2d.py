@@ -228,7 +228,7 @@ virtual_mass_kg = 5.0
 # [90, 150] for its handle and robot. This project's fixed-admittance
 # baseline runs 10 to 100, so expect to re-tune these on the UR5e.
 damping_min_n_s_m = 10.0
-damping_max_n_s_m = 100.0
+damping_max_n_s_m = 200.0
 
 # TODO force range [N] mapping force magnitude to damping in (7), with
 # min < max. At or below force_min the damping is damping_max (precise);

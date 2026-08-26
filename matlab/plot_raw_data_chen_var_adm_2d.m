@@ -85,12 +85,12 @@ script_directory = fileparts(mfilename('fullpath'));
 % TODO controller log written by scripts/ur5e_chen_var_adm_2d.py.
 robot_csv_file = fullfile( ...
     script_directory, '..', 'data', 'raw_data', ...
-    'ur5e_chen_var_adm_2d_fine_gross_shape_d10-50_s0.csv');
+    'ur5e_chen_var_adm_2d_fine_gross_shape_s0.csv');
 
 % TODO matching gaze log from the same trial (same time_s origin).
 gaze_csv_file = fullfile( ...
     script_directory, '..', 'data', 'raw_data', ...
-    'tobii_chen_var_adm_2d_fine_gross_shape_d10-50_s0.csv');
+    'tobii_chen_var_adm_2d_fine_gross_shape_s0.csv');
 
 % TODO true overlays gaze on the TCP path and draws the gaze figure.
 % Set false to skip every gaze panel, e.g. for a trial recorded without
@@ -103,7 +103,7 @@ plot_gaze_overlay = true;
 % controller diagnostics need no calibration.
 calibration_json_file = fullfile( ...
     script_directory, '..', 'data', 'calibrations', ...
-    'tobii_coppelia_reference_calibration_fine_gross_shape_s0.json');
+    'tobii_coppelia_reference_calibration_fine_gross_shape.json');
 
 % TODO these must match the User Settings of the Python controller that
 % produced the CSV. They are only drawn as reference lines; the script

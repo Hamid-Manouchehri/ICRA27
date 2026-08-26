@@ -82,7 +82,7 @@ calibration_json_path = (
     Path(__file__).resolve().parent.parent
     / "data"
     / "calibrations"
-    / "tobii_coppelia_reference_calibration_chen_shape.json"
+    / "tobii_coppelia_reference_calibration_fine_gross_shape.json"
 )
 
 robot_ip = "192.168.1.100"  # TODO UR5e IPv4 address or hostname

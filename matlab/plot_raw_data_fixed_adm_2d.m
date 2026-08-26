@@ -63,7 +63,7 @@
 %   the same trial clock.
 
 clear;
-% close all;
+close all;
 clc;
 
 script_directory = fileparts(mfilename('fullpath'));
