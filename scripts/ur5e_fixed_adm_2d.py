@@ -61,7 +61,7 @@ write_data_csv_path = (
     "data" /
     "raw_data" /
     # "ur5e_fixed_adm_2d_test.csv"
-    "ur5e_fixed_adm_2d_fine_gross_shape_d100_s0.csv"
+    "ur5e_fixed_adm_2d_fine_gross_shape_d50_s0.csv"
 )
 # TODO output CSV path [file path]; resolved from this script, not cwd.
 tobii_data_csv_path = (
@@ -69,7 +69,7 @@ tobii_data_csv_path = (
     "data" /
     "raw_data" /
     # "tobii_fixed_adm_2d_test.csv"
-    "tobii_fixed_adm_2d_fine_gross_shape_d100_s0.csv"
+    "tobii_fixed_adm_2d_fine_gross_shape_d50_s0.csv"
 )
 # TODO Tobii output CSV path [file path]; one row per Tobii callback sample.
 
@@ -87,14 +87,7 @@ start_joint_q_deg = [  # TODO joint angles [deg], within robot joint limits
     90.3,
     -2.75,
 ]
-# start_joint_q_deg = [  # TODO joint angles [deg], lower z, close to table for calibration stuffs
-#     -77.7,
-#     -115.7,
-#     -113.0,
-#     -42.0,
-#     90.22,
-#     -2.7,
-# ]  # end-effector close to table; lower z
+
 start_joint_q = [q_deg * math.pi / 180.0 for q_deg in start_joint_q_deg]
 start_joint_speed = 0.5  # TODO moveJ speed [rad/s], recommended 0.1 to 1
 start_joint_acceleration = 0.5  # TODO moveJ acceleration [rad/s^2], 0.1 to 2
@@ -108,8 +101,8 @@ speed_stop_deceleration = 2.0  # TODO speedStop deceleration [m/s^2], 0.5 to 5
 M_inertia_x = 10.0  # TODO virtual x mass [kg], recommended 1 to 20
 M_inertia_y = 10.0  # TODO virtual y mass [kg], recommended 1 to 20
 
-B_damping_x = 100.0  # TODO fixed x damping [Ns/m], recommended 20 to 120
-B_damping_y = 100.0  # TODO fixed y damping [Ns/m], recommended 20 to 120
+B_damping_x = 50.0  # TODO fixed x damping [Ns/m], recommended 20 to 120
+B_damping_y = 50.0  # TODO fixed y damping [Ns/m], recommended 20 to 120
 
 force_lpf_alpha = 0.2  # TODO filter alpha [0, 1]; smaller is smoother
 force_deadband = 1.0  # TODO ignore force noise below this value [N], 0 to 5

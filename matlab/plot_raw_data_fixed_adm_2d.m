@@ -161,7 +161,7 @@ animate_evolution = true;
 % TODO replay every Nth control sample [count], positive. At 500 Hz a
 % stride of 10 replays 50 frames per trial second. Larger is faster and
 % coarser.
-animation_stride = 10;
+animation_stride = 50;
 
 % TODO pause between replay frames [s], >= 0. Set 0 to replay as fast as
 % the figure can redraw.
