@@ -6,9 +6,10 @@
 % different [damping_min, damping_max] range depending on whether the
 % TCP is in the fine or gross region of fine_gross_shape.obj), both
 % subject s0, same task. Figures 1-4 report everything visually; the
-% full numeric summary (Figures 2-4's values plus a few not otherwise
-% plotted) is printed to the command window rather than duplicated as a
-% fifth figure.
+% full numeric summary (Figures 2-4's values, plus percentiles for
+% every per-sample distribution -- error, force, speed, damping) is
+% printed to the command window rather than duplicated as a fifth
+% figure.
 %
 % Inputs:
 %   data/raw_data/ur5e_chen_var_adm_2d_fine_gross_shape_s0.csv
@@ -30,7 +31,7 @@
 %   Figure 4: boxplot of bd_applied_Ns_m, grouped by controller x
 %   region (4 groups), with each group's mean marked and labeled.
 %   A command-window table with every number from Figures 2-4 side by
-%   side, plus the difference between the two controllers for each row.
+%   side (Original, Regional).
 %   No file is written; this script only reads raw CSVs and one OBJ.
 %
 % Region detection and trimming:
@@ -115,6 +116,13 @@ minimum_motion_run_s = 0.25;
 jerk_outlier_window_s = 0.02;
 jerk_smoothing_window_s = 0.10;
 
+% TODO percentile levels reported for every per-sample distribution
+% (error, force, speed, damping) [0, 100], strictly increasing. The
+% median is the 50th; the paired low/high pair describes the spread
+% around it (5/95 by default -- widen or narrow as needed). Computed
+% with prctile() (Statistics and Machine Learning Toolbox).
+percentile_levels = [5, 50, 95];
+
 % TODO colors: one pair per controller (bars/boxplot), one triple for
 % the region-colored path plot, and marker size [points^2].
 original_color = [0.55, 0.55, 0.55];
@@ -154,7 +162,7 @@ for controller_idx = 1:2
         trials{controller_idx}, reference_xy_m, ...
         region_boundary_coppeliasim_x_m, region_transition_x_range_m, ...
         moving_speed_threshold_m_s, jerk_outlier_window_s, ...
-        jerk_smoothing_window_s);
+        jerk_smoothing_window_s, percentile_levels);
 end
 
 %% ================================================================
@@ -397,15 +405,62 @@ regional_values = [ ...
     median(metrics{2}.region_damping_n_s_m{1}); ...
     median(metrics{2}.region_damping_n_s_m{2})];
 
-difference_values = regional_values - original_values;
-
 fprintf('\n--- Chen: Original vs Regional, fine_gross_shape, s0 ---\n');
-fprintf('%-32s %14s %14s %14s\n', '', 'Original', 'Regional', ...
-    'Regional-Original');
+fprintf('%-32s %14s %14s\n', '', 'Original', 'Regional');
 for row_idx = 1:numel(row_names)
     print_row(row_names{row_idx}, row_formats{row_idx}, [ ...
-        original_values(row_idx), regional_values(row_idx), ...
-        difference_values(row_idx)]);
+        original_values(row_idx), regional_values(row_idx)]);
+end
+fprintf('\n');
+
+% Percentiles for every per-sample distribution in this script, built
+% programmatically so the row count follows percentile_levels rather
+% than being hand-enumerated. whole_trial_percentile_specs covers the
+% three whole-trial distributions; region_percentile_specs covers the
+% four region-split ones (error, force, speed, damping -- damping has
+% no whole-trial counterpart, since it is only ever reported per region
+% elsewhere in this script).
+fprintf('Percentiles (P%s):\n', strjoin(string(percentile_levels), '/'));
+
+whole_trial_percentile_specs = { ...
+    'Error [mm]',  'error_percentiles_mm',  '%14.2f'; ...
+    'Force [N]',   'force_percentiles_n',   '%14.3f'; ...
+    'Speed [m/s]', 'speed_percentiles_m_s', '%14.4f'};
+
+for spec_idx = 1:size(whole_trial_percentile_specs, 1)
+    label_prefix = whole_trial_percentile_specs{spec_idx, 1};
+    field_name = whole_trial_percentile_specs{spec_idx, 2};
+    value_format = whole_trial_percentile_specs{spec_idx, 3};
+
+    for p_idx = 1:numel(percentile_levels)
+        row_label = sprintf('%s P%g', label_prefix, percentile_levels(p_idx));
+        print_row(row_label, value_format, [ ...
+            metrics{1}.(field_name)(p_idx), metrics{2}.(field_name)(p_idx)]);
+    end
+end
+fprintf('\n');
+
+region_percentile_specs = { ...
+    'error [mm]',      'region_error_percentiles_mm',      '%14.2f'; ...
+    'force [N]',       'region_force_percentiles_n',       '%14.3f'; ...
+    'speed [m/s]',     'region_speed_percentiles_m_s',     '%14.4f'; ...
+    'damping [N s/m]', 'region_damping_percentiles_n_s_m', '%14.1f'};
+
+for spec_idx = 1:size(region_percentile_specs, 1)
+    label_prefix = region_percentile_specs{spec_idx, 1};
+    field_name = region_percentile_specs{spec_idx, 2};
+    value_format = region_percentile_specs{spec_idx, 3};
+
+    for region_idx = 1:2
+        for p_idx = 1:numel(percentile_levels)
+            row_label = sprintf('%s: %s P%g', region_labels{region_idx}, ...
+                label_prefix, percentile_levels(p_idx));
+            original_value = metrics{1}.(field_name)(region_idx, p_idx);
+            regional_value = metrics{2}.(field_name)(region_idx, p_idx);
+            print_row(row_label, value_format, ...
+                [original_value, regional_value]);
+        end
+    end
 end
 fprintf('\n');
 
@@ -488,10 +543,13 @@ end
 function trial_metrics = compute_trial_metrics(trial, reference_xy_m, ...
         region_boundary_coppeliasim_x_m, region_transition_x_range_m, ...
         moving_speed_threshold_m_s, jerk_outlier_window_s, ...
-        jerk_smoothing_window_s)
+        jerk_smoothing_window_s, percentile_levels)
 %COMPUTE_TRIAL_METRICS Whole-trial and region-split metrics for one trial.
 %
-% Region columns/cells are ordered [fine, gross] throughout.
+% Region columns/cells are ordered [fine, gross] throughout. Every
+% *_percentiles_* field holds percentile_levels evaluated on the same
+% per-sample array and the same mask as the mean/median next to it, so
+% they describe the same population, just at more than one point.
 
     moving_mask = trial.speed_m_s > moving_speed_threshold_m_s;
     tracking_error_m = distance_to_reference_path( ...
@@ -509,6 +567,13 @@ function trial_metrics = compute_trial_metrics(trial, reference_xy_m, ...
     trial_metrics.mean_speed_m_s = mean(trial.speed_m_s);
     trial_metrics.mean_error_mm = 1e3 * mean(tracking_error_m(moving_mask));
     trial_metrics.mean_force_n = mean(force_magnitude_n(moving_mask));
+
+    trial_metrics.speed_percentiles_m_s = prctile( ...
+        trial.speed_m_s, percentile_levels);
+    trial_metrics.error_percentiles_mm = prctile( ...
+        1e3 * tracking_error_m(moving_mask), percentile_levels);
+    trial_metrics.force_percentiles_n = prctile( ...
+        force_magnitude_n(moving_mask), percentile_levels);
 
     jerk = compute_jerk_series(trial.time_s, trial.xy_m(:, 1), ...
         trial.xy_m(:, 2), jerk_outlier_window_s, jerk_smoothing_window_s);
@@ -530,6 +595,14 @@ function trial_metrics = compute_trial_metrics(trial, reference_xy_m, ...
     trial_metrics.region_time_s = zeros(1, 2);
     trial_metrics.region_damping_n_s_m = cell(1, 2);
 
+    % Rows = region [fine; gross], columns = percentile_levels.
+    percentile_count = numel(percentile_levels);
+    trial_metrics.region_error_percentiles_mm = zeros(2, percentile_count);
+    trial_metrics.region_force_percentiles_n = zeros(2, percentile_count);
+    trial_metrics.region_speed_percentiles_m_s = zeros(2, percentile_count);
+    trial_metrics.region_damping_percentiles_n_s_m = ...
+        zeros(2, percentile_count);
+
     for region_idx = 1:2
         if region_idx == 1
             region_mask = sample_is_fine;
@@ -549,6 +622,19 @@ function trial_metrics = compute_trial_metrics(trial, reference_xy_m, ...
             sum(sample_dt_s(region_mask));
         trial_metrics.region_damping_n_s_m{region_idx} = ...
             trial.damping_n_s_m(eval_mask);
+
+        trial_metrics.region_error_percentiles_mm(region_idx, :) = ...
+            prctile( ...
+            1e3 * tracking_error_m(eval_mask), percentile_levels);
+        trial_metrics.region_force_percentiles_n(region_idx, :) = ...
+            prctile( ...
+            force_magnitude_n(eval_mask), percentile_levels);
+        trial_metrics.region_speed_percentiles_m_s(region_idx, :) = ...
+            prctile( ...
+            trial.speed_m_s(eval_mask), percentile_levels);
+        trial_metrics.region_damping_percentiles_n_s_m(region_idx, :) = ...
+            prctile( ...
+            trial.damping_n_s_m(eval_mask), percentile_levels);
     end
 end
 
