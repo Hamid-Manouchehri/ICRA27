@@ -1,12 +1,23 @@
-%% Windowed feature extraction for ur5e_fixed_adm_2d.py pilot recordings.
+%% Windowed feature extraction for ur5e_fixed_adm_2d_labeled.py pilot
+%% recordings.
 %
 % For one recorded trial (robot CSV + gaze CSV + calibration JSON + the
 % shape .obj the operator traced), computes the robot, eye-gaze, and
 % robot+gaze fusion features listed below over a sliding window with
 % adjustable length and overlap, and writes one row per window to an
 % output CSV. Intended as training data for a Fine/Gross/Natural
-% classifier -- trial_class_label (User Settings) is written into every
-% output row as the ground-truth label for this trial.
+% classifier -- the ground-truth class is NOT a per-file constant.
+% robot_csv_file's own per-sample "label" column (written live by
+% ur5e_fixed_adm_2d_labeled.py from whichever key the operator is
+% holding -- 'f'/'g'/'n', or "None" when no key is held) is read and
+% resampled onto Stage 1's uniform grid.
+%
+% "None" is not a fourth class, just unlabeled time (rest, or a pause
+% while switching keys), so it is not considered anywhere in feature
+% calculation: a window is skipped outright -- no features computed,
+% no output row -- unless every one of its samples already carries the
+% same real label (see most_common_label() and the Stage 2 loop for
+% why this is a skip rather than a filter applied after the fact).
 %
 % Inputs:
 %   robot_csv_file   - data/raw_data/ur5e_fixed_adm_2d_<trial>.csv
@@ -21,9 +32,17 @@
 %       and those features are written as NaN instead of computed.
 %
 % Output:
-%   One CSV, one row per window: window bounds, trial_class_label, then
-%   23 feature columns (11 robot, 6 gaze, 6 fusion -- see the three
-%   *_window_features() functions below for the exact list and units).
+%   One CSV, one row per KEPT window: window bounds, trial_class_label,
+%   label_purity, then 23 feature columns (11 robot, 6 gaze, 6 fusion --
+%   see the three *_window_features() functions below for the exact list
+%   and units). A candidate window is dropped -- no row written -- if
+%   it is majority "None" (unlabeled) or if it crosses a label change
+%   (majority label covers less than 100% of its samples); see the
+%   Stage 2 loop. label_purity is kept as an explicit diagnostic even
+%   though every surviving row necessarily reads 1.0 by construction --
+%   a downstream script can check it rather than take that on faith.
+%   The command window reports how many candidate windows were dropped
+%   and why.
 %
 % Two-stage design, for readability and correctness:
 %   Stage 1 computes every derived per-sample signal ONCE for the whole
@@ -64,12 +83,15 @@
 %   project's convention that MATLAB scripts do not call one another.
 %
 % Assumptions:
-%   robot_csv_file was written by ur5e_fixed_adm_2d.py, so column names
-%   match its write_csv_header() (x_m/y_m, Fx_filt_N/Fy_filt_N,
-%   tcp_vx/vy_actual_m_s). gaze_csv_file is the matching Tobii CSV (full
-%   SDK callback passthrough) from the same trial, sharing its time_s
-%   origin. shape_offset_xy_m is the CoppeliaSim-frame offset already
-%   validated for this shape elsewhere in this project.
+%   robot_csv_file was written by ur5e_fixed_adm_2d_labeled.py, so
+%   column names match its write_csv_header() (x_m/y_m, Fx_filt_N/
+%   Fy_filt_N, tcp_vx/vy_actual_m_s) AND it has a "label" column -- a
+%   plain ur5e_fixed_adm_2d.py recording (no labeling) will fail here
+%   with "Unrecognized table variable name 'label'". gaze_csv_file is
+%   the matching Tobii CSV (full SDK callback passthrough) from the same
+%   trial, sharing its time_s origin. shape_offset_xy_m is the
+%   CoppeliaSim-frame offset already validated for this shape elsewhere
+%   in this project.
 
 clear;
 close all;
@@ -82,23 +104,20 @@ calibration_directory = fullfile( ...
 shapes_directory = fullfile(script_directory, '..', 'data', 'shapes');
 
 %% User Settings
-% TODO the four input files for this one trial.
+% TODO the four input files for this one trial. robot_csv_file must come
+% from ur5e_fixed_adm_2d_labeled.py (needs its "label" column) -- plain
+% ur5e_fixed_adm_2d.py recordings carry no ground-truth class at all.
 robot_csv_file = fullfile(raw_data_directory, ...
-    'ur5e_fixed_adm_2d_fine_gross_shape_d50_s0.csv');
+    'ur5e_fixed_adm_2d_labeled_d50_s1.csv');
 gaze_csv_file = fullfile(raw_data_directory, ...
-    'tobii_fixed_adm_2d_fine_gross_shape_d50_s0.csv');
+    'tobii_fixed_adm_2d_labeled_d50_s1.csv');
 calibration_json_file = fullfile(calibration_directory, ...
-    'tobii_coppelia_reference_calibration_fine_gross_shape.json');
+    'tobii_coppelia_reference_calibration_fine_gross_shape_s1.json');
 shape_obj_file = fullfile(shapes_directory, 'fine_gross_shape.obj');
-
-% TODO ground-truth class label written into every output row of this
-% trial, one of 'fine', 'gross', 'natural' (or your own scheme) --
-% whatever this trial actually was.
-trial_class_label = 'fine';
 
 % TODO output CSV path [file path].
 write_features_csv_path = fullfile(script_directory, '..', 'data', ...
-    'processed_data', 'features_fixed_adm_2d_fine_gross_shape_d50_s0.csv');
+    'processed_data', 'features_fixed_adm_2d_labeled_d50_s1.csv');
 
 % TODO translation from the mesh CAD frame to the CoppeliaSim frame [m].
 % Matches the value already validated for this shape elsewhere in this
@@ -177,6 +196,9 @@ robot_force_x_n = get_numeric_column(robot_table.Fx_filt_N);
 robot_force_y_n = get_numeric_column(robot_table.Fy_filt_N);
 robot_vx_m_s = get_numeric_column(robot_table.tcp_vx_actual_m_s);
 robot_vy_m_s = get_numeric_column(robot_table.tcp_vy_actual_m_s);
+% Text, not numeric -- already a string array via readtable's
+% 'TextType','string' above, so no get_numeric_column() conversion.
+robot_label = robot_table.label;
 
 gaze_table = readtable(gaze_csv_file, 'Delimiter', ',', ...
     'ReadVariableNames', true, 'VariableNamingRule', 'preserve', ...
@@ -234,6 +256,12 @@ sample.force_y_n = interp1(robot_time_s, robot_force_y_n, ...
 sample.force_mag_n = hypot(sample.force_x_n, sample.force_y_n);
 sample.power_w = sample.force_x_n .* sample.vx_m_s + ...
     sample.force_y_n .* sample.vy_m_s;
+
+% Ground-truth class, resampled the same nearest-in-time way as
+% fixation position below -- see resample_labels_nearest() for why text
+% needs its own resampling helper instead of interp1() directly.
+sample.label = resample_labels_nearest(robot_time_s, robot_label, ...
+    sample.time_s);
 
 %% ================================================================
 % Stage 1: per-sample derived signals, gaze side
@@ -343,10 +371,37 @@ window_count = size(window_bounds, 1);
 
 feature_rows = cell(window_count, 1);
 
+% A window is skipped entirely -- no features computed, no output row
+% -- unless every one of its samples already carries the same real
+% (non-"None") label. This is stricter than just marking the row, and
+% deliberately so: "None" data must not be considered in feature
+% calculation at all, and the only way to guarantee that for EVERY
+% feature (not just the mean/median ones) is to never hand a mixed
+% window to the feature functions in the first place. DSJ and
+% curvature_sign_reversal_rate_per_m specifically differentiate/compare
+% consecutive samples across the window's full time span; surgically
+% removing just the "None"-labeled samples from the middle of an
+% otherwise-kept window would leave a time gap that interp1() inside
+% compute_jerk_series() would silently bridge with a straight line,
+% fabricating motion (and jerk) that never happened. Skipping the whole
+% window sidesteps that rather than risk it.
+excluded_none_count = 0;
+excluded_mixed_count = 0;
+
 for window_idx = 1:window_count
     first_index = window_bounds(window_idx, 1);
     last_index = window_bounds(window_idx, 2);
     window_range = first_index:last_index;
+
+    [majority_label, purity] = most_common_label(sample.label(window_range));
+
+    if majority_label == "None"
+        excluded_none_count = excluded_none_count + 1;
+        continue;
+    elseif purity < 1
+        excluded_mixed_count = excluded_mixed_count + 1;
+        continue;
+    end
 
     robot_features = compute_robot_window_features(sample, window_range, ...
         minimum_speed_m_s, power_law_min_sample_count, ...
@@ -366,18 +421,22 @@ for window_idx = 1:window_count
     feature_row.window_end_s = sample.time_s(last_index);
     feature_row.window_center_s = 0.5 * ( ...
         sample.time_s(first_index) + sample.time_s(last_index));
-    feature_row.trial_class_label = string(trial_class_label);
+    feature_row.trial_class_label = majority_label;
+    feature_row.label_purity = purity;
 
     feature_rows{window_idx} = merge_structs( ...
         feature_row, robot_features, gaze_features, fusion_features);
 end
 
-feature_table = struct2table([feature_rows{:}]);
+is_kept_window = ~cellfun(@isempty, feature_rows);
+feature_table = struct2table([feature_rows{is_kept_window}]);
 writetable(feature_table, write_features_csv_path);
 
-fprintf('\nWrote %d windows (%.1f s each, %.0f%% overlap) to %s\n', ...
-    window_count, window_length_s, 100 * window_overlap_fraction, ...
-    write_features_csv_path);
+fprintf(['\nWrote %d of %d candidate windows (%.1f s each, %.0f%% ' ...
+    'overlap) to %s\n(excluded: %d unlabeled "None", %d crossed a ' ...
+    'label change).\n'], height(feature_table), window_count, ...
+    window_length_s, 100 * window_overlap_fraction, ...
+    write_features_csv_path, excluded_none_count, excluded_mixed_count);
 
 
 %% ================================================================
@@ -572,6 +631,40 @@ function angle_deg = angle_between_vectors_deg(vector_a, vector_b)
     cross_value = vector_a(1) * vector_b(2) - vector_a(2) * vector_b(1);
     dot_value = vector_a(1) * vector_b(1) + vector_a(2) * vector_b(2);
     angle_deg = atan2d(cross_value, dot_value);
+end
+
+
+function resampled_label = resample_labels_nearest( ...
+        raw_time_s, raw_label, query_time_s)
+%RESAMPLE_LABELS_NEAREST Nearest-in-time per-sample class label,
+% resampled onto query_time_s (Stage 1's uniform grid).
+%
+% Labels are text ("None"/"Fine"/"Gross"/"Natural", from
+% ur5e_fixed_adm_2d_labeled.py's keyboard-driven "label" column), so
+% this cannot use interp1() directly the way the numeric signals above
+% are resampled. Instead the nearest RAW SAMPLE INDEX is found first
+% (interp1 on plain sample indices, which is numeric) and that index is
+% used to look the label up directly -- the same "index, then index
+% into the real array" trick nearest_reference_index() uses for the
+% reference path.
+%
+% raw_time_s can have duplicate or out-of-order timestamps (the raw CSV
+% is not guaranteed clean), so it is sorted and deduplicated first, the
+% same way compute_motion_derivatives() cleans its own input.
+
+    valid_rows = isfinite(raw_time_s);
+    clean_time_s = raw_time_s(valid_rows);
+    clean_label = raw_label(valid_rows);
+
+    [clean_time_s, sort_order] = sort(clean_time_s);
+    clean_label = clean_label(sort_order);
+
+    [clean_time_s, unique_indices] = unique(clean_time_s, 'stable');
+    clean_label = clean_label(unique_indices);
+
+    nearest_index = round(interp1(clean_time_s, ...
+        (1:numel(clean_time_s))', query_time_s, 'nearest', 'extrap'));
+    resampled_label = clean_label(nearest_index);
 end
 
 
@@ -837,6 +930,32 @@ function merged = merge_structs(varargin)
                 varargin{struct_idx}.(field_names{field_idx});
         end
     end
+end
+
+
+function [majority_label, purity] = most_common_label(label_slice)
+%MOST_COMMON_LABEL Majority-vote class label for one window, plus the
+% fraction of the window's samples that agree with it.
+%
+% purity is in [0, 1]: 1.0 means every sample in the window carried the
+% same label; lower values flag a window whose time span crossed a
+% label change while the operator was recording (see the file header
+% and the Output doc comment).
+%
+% Ties are broken alphabetically -- unique()'s default sort order for
+% string arrays -- so the result never depends on sample order or on an
+% unspecified/version-dependent tie-break inside a built-in like
+% mode(categorical(...)).
+
+    unique_labels = unique(label_slice);  % ascending, i.e. alphabetical
+    label_counts = zeros(size(unique_labels));
+    for label_idx = 1:numel(unique_labels)
+        label_counts(label_idx) = sum(label_slice == unique_labels(label_idx));
+    end
+
+    [best_count, best_idx] = max(label_counts);
+    majority_label = unique_labels(best_idx);
+    purity = double(best_count) / numel(label_slice);
 end
 
 

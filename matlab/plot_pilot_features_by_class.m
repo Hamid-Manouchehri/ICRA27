@@ -1,24 +1,38 @@
 %% Plot windowed features from extract_pilot_features_fixed_adm_2d.m,
 %% grouped by trial_class_label (Fine / Gross / Natural).
 %
-% Loads one or more feature CSVs (typically one file per recorded
-% trial, each trial being one class), concatenates them, and for every
-% feature draws a boxplot of its distribution split by class -- the
-% "distributions given class" view a classifier's own feature choice
-% starts from.
+% Loads one or more feature CSVs -- typically one file per recording
+% session, where a single ur5e_fixed_adm_2d_labeled.py session can
+% itself contain windows of every label, since the operator can switch
+% keys mid-recording -- concatenates them, and for every feature draws
+% a boxplot of its distribution split by class -- the "distributions
+% given class" view a classifier's own feature choice starts from.
+%
+% "None" (no key held) is not a fourth class, just unlabeled time --
+% rest between deliberate segments, or the operator not yet having
+% picked a label -- so windows labeled "None" are dropped up front and
+% never appear in any figure; see the "Loaded/dropped" line this script
+% prints at the command window to confirm how many that was.
 %
 % Inputs:
 %   data/raw_data/features_fixed_adm_2d_<trial>.csv, one or more, as
 %   written by extract_pilot_features_fixed_adm_2d.m. Every listed file
-%   must share that script's exact column names.
+%   must share that script's exact column names, including
+%   trial_class_label and label_purity -- an older feature CSV written
+%   before that script read per-sample labels has neither and will fail
+%   here with "Unrecognized table variable name".
 %
 % Output:
 %   Figure 1: the 11 robot features (tiledlayout 3x4, one tile unused).
 %   Figure 2: the 6 eye-gaze features (tiledlayout 2x3).
 %   Figure 3: the 6 robot+gaze fusion features (tiledlayout 2x3).
 %   Each tile is one feature's boxplot, one box per class in
-%   class_order. A per-class window count is printed to the command
-%   window as a loading sanity check.
+%   class_order. Besides dropping "None" windows outright, windows
+%   below minimum_label_purity (a window whose time span crossed a
+%   label change while recording) are also dropped before any of this
+%   -- see User Settings. A per-class window count (post-filtering) is
+%   printed to the command window as a loading sanity check, alongside
+%   how many windows each filter dropped.
 %   No file is written; this script only reads the feature CSVs.
 %
 % A numerical note worth knowing before reading the DSJ panel: DSJ
@@ -38,23 +52,35 @@ clc;
 script_directory = fileparts(mfilename('fullpath'));
 
 %% User Settings
-% TODO one feature CSV per recorded trial. Add to this list as more
-% trials (ideally covering all three classes) get recorded and run
+% TODO one feature CSV per recording session. A single labeled session
+% can already contain all three classes (plus unlabeled "None" time),
+% so this list is for combining multiple separate sessions, not one
+% file per class. Add to it as more sessions get recorded and run
 % through extract_pilot_features_fixed_adm_2d.m.
 feature_csv_files = { ...
     fullfile(script_directory, '..', 'data', 'processed_data', ...
-        'features_fixed_adm_2d_fine_gross_shape_d50_s0.csv')};
+        'features_fixed_adm_2d_labeled_d50_s1.csv')};
 
 % TODO the classes to show and the order to show them in, left to
 % right within each box group. Must match the trial_class_label values
-% actually written into your feature CSVs.
-class_order = {'fine', 'gross', 'natural'};
+% actually written into your feature CSVs -- ur5e_fixed_adm_2d_
+% labeled.py writes exactly 'Fine'/'Gross'/'Natural' (plus 'None',
+% dropped below since it is not a class -- see file header).
+class_order = {'Fine', 'Gross', 'Natural'};
 
 % TODO one RGB color per entry in class_order, same order.
 class_colors = [ ...
-    0.80, 0.20, 0.20;   % fine
-    0.20, 0.50, 0.80;   % gross
-    0.30, 0.60, 0.20];  % natural
+    0.80, 0.20, 0.20;   % Fine
+    0.20, 0.50, 0.80;   % Gross
+    0.30, 0.60, 0.20];  % Natural
+
+% TODO minimum label_purity (fraction of a window's samples that
+% carried the majority label, see extract_pilot_features_fixed_adm_2d.m)
+% to keep a window [0, 1]. 1.0 keeps only windows the operator's key
+% presses never crossed mid-window -- the cleanest exemplars of each
+% class, which is what a "distribution given class" plot should show.
+% Lower it to trade that purity for more windows per class.
+minimum_label_purity = 1.0;
 
 %% Load and concatenate every listed feature CSV
 feature_tables = cell(1, numel(feature_csv_files));
@@ -64,11 +90,25 @@ for file_idx = 1:numel(feature_csv_files)
         'VariableNamingRule', 'preserve', 'TextType', 'string');
 end
 feature_table = vertcat(feature_tables{:});
+loaded_window_count = height(feature_table);
+
+% "None" is unlabeled time, not a fourth class -- drop it before doing
+% anything else so it can never leak into a figure. Everything past
+% this point assumes trial_class_label only ever holds a real class.
+is_a_class = feature_table.trial_class_label ~= "None";
+feature_table = feature_table(is_a_class, :);
+excluded_none_count = loaded_window_count - height(feature_table);
+
+is_pure_enough = feature_table.label_purity >= minimum_label_purity;
+excluded_impure_count = sum(~is_pure_enough);
+feature_table = feature_table(is_pure_enough, :);
 
 class_labels = categorical(feature_table.trial_class_label, class_order);
 
-fprintf('\nLoaded %d windows from %d file(s):\n', ...
-    height(feature_table), numel(feature_csv_files));
+fprintf('\nLoaded %d windows from %d file(s): %d dropped ("None"), ', ...
+    loaded_window_count, numel(feature_csv_files), excluded_none_count);
+fprintf('%d dropped (purity < %.2f).\n%d windows remain:\n', ...
+    excluded_impure_count, minimum_label_purity, height(feature_table));
 for class_idx = 1:numel(class_order)
     window_count = sum(class_labels == class_order{class_idx});
     fprintf('  %-10s %d windows\n', class_order{class_idx}, window_count);

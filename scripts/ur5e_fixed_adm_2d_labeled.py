@@ -101,14 +101,14 @@ write_data_csv_path = (
     Path(__file__).resolve().parent.parent /
     "data" /
     "raw_data" /
-    "ur5e_fixed_adm_2d_labeled_d50_s0.csv"
+    "ur5e_fixed_adm_2d_labeled_d50_s1.csv"
 )
 # TODO output CSV path [file path]; resolved from this script, not cwd.
 tobii_data_csv_path = (
     Path(__file__).resolve().parent.parent /
     "data" /
     "raw_data" /
-    "tobii_fixed_adm_2d_labeled_d50_s0.csv"
+    "tobii_fixed_adm_2d_labeled_d50_s1.csv"
 )
 # TODO Tobii output CSV path [file path]; one row per Tobii callback sample.
 
@@ -192,7 +192,7 @@ if any(
     )
 
 force_bias_samples = 250  # TODO unloaded samples [count], recommended >= 100
-max_runtime_seconds = 120  # TODO automatic stop time [s], must be positive
+max_runtime_seconds = 600  # TODO automatic stop time [s], must be positive
 # TODO subject preparation delay before control/recording [s], valid >= 0.
 subject_preparation_time_s = 1.0  # seconds
 
@@ -674,6 +674,7 @@ def write_tobii_csv(gaze_queue, writer_stop_event):
                     time_s,
                     host_monotonic_time_ns,
                     gaze_sample,
+                    label,
                 ) = gaze_queue.get(timeout=0.1)
             except queue.Empty:
                 continue
@@ -683,7 +684,7 @@ def write_tobii_csv(gaze_queue, writer_stop_event):
                 csv_writer.writerow(
                     ["time_s", "host_monotonic_time_ns"] +
                     csv_field_names +
-                    ["sdk_data_json"]
+                    ["sdk_data_json", "label"]
                 )
 
             csv_row = [time_s, host_monotonic_time_ns] + [
@@ -696,6 +697,7 @@ def write_tobii_csv(gaze_queue, writer_stop_event):
                     separators=(",", ":"),
                 )
             )
+            csv_row.append(label)
             csv_writer.writerow(csv_row)
 
 
@@ -723,6 +725,12 @@ def create_tobii_gaze_callback(
             host_monotonic_time_ns - trial_start_time_ns
         ) * 1e-9
 
+        # Read now, not in the writer thread: the queue can lag behind
+        # under load, and the label must reflect what was held at the
+        # moment this gaze sample actually arrived, not whenever it
+        # eventually gets written to disk.
+        label = read_current_label()
+
         # The second check prevents a callback that overlaps trial shutdown
         # from adding a post-stop sample to the queue.
         if not recording_active_event.is_set():
@@ -734,6 +742,7 @@ def create_tobii_gaze_callback(
                     time_s,
                     host_monotonic_time_ns,
                     gaze_sample,
+                    label,
                 )
             )
         except queue.Full:
