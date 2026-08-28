@@ -192,7 +192,7 @@ if any(
     )
 
 force_bias_samples = 250  # TODO unloaded samples [count], recommended >= 100
-max_runtime_seconds = 600  # TODO automatic stop time [s], must be positive
+max_runtime_seconds = 1000  # TODO automatic stop time [s], must be positive
 # TODO subject preparation delay before control/recording [s], valid >= 0.
 subject_preparation_time_s = 1.0  # seconds
 

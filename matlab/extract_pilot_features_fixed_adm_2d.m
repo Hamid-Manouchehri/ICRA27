@@ -18,6 +18,14 @@
 % no output row -- unless every one of its samples already carries the
 % same real label (see most_common_label() and the Stage 2 loop for
 % why this is a skip rather than a filter applied after the fact).
+% transition_margin_s (User Settings) extends this: a window is also
+% skipped if any of its samples fall within that many seconds after a
+% label change, even when the window's own label is already 100%
+% consistent -- the operator's motion right after a key press (or
+% right before a release) is still settling into/out of the labeled
+% behaviour. Both exclusions act on whole windows, sourced from the
+% raw per-sample label/timestamps, never by cutting samples out of an
+% otherwise-kept window -- see the Stage 2 loop's comment for why.
 %
 % Inputs:
 %   robot_csv_file   - data/raw_data/ur5e_fixed_adm_2d_<trial>.csv
@@ -36,11 +44,13 @@
 %   label_purity, then 23 feature columns (11 robot, 6 gaze, 6 fusion --
 %   see the three *_window_features() functions below for the exact list
 %   and units). A candidate window is dropped -- no row written -- if
-%   it is majority "None" (unlabeled) or if it crosses a label change
-%   (majority label covers less than 100% of its samples); see the
-%   Stage 2 loop. label_purity is kept as an explicit diagnostic even
-%   though every surviving row necessarily reads 1.0 by construction --
-%   a downstream script can check it rather than take that on faith.
+%   it is majority "None" (unlabeled), if it crosses a label change
+%   (majority label covers less than 100% of its samples), or if any
+%   of its samples fall within transition_margin_s of a label change
+%   even with a consistent label; see the Stage 2 loop. label_purity is
+%   kept as an explicit diagnostic even though every surviving row
+%   necessarily reads 1.0 by construction -- a downstream script can
+%   check it rather than take that on faith.
 %   The command window reports how many candidate windows were dropped
 %   and why.
 %
@@ -141,6 +151,17 @@ window_length_s = 2.0;
 % half its samples with its neighbours (more rows, more correlated
 % between adjacent rows -- keep this in mind when splitting train/test).
 window_overlap_fraction = 0.0;
+
+% TODO seconds after a label change (Fine->None, None->Gross, ...) to
+% also exclude from feature calculation, on top of "None" itself [s],
+% >= 0. A window is skipped -- same as a "None" or mixed-label window,
+% see the Stage 2 loop -- if any of its samples fall within this many
+% seconds after a label change, even if the window's own label is
+% already 100% consistent: the operator's motion right after pressing
+% a key (or right before releasing it) is still settling into/out of
+% the labeled behaviour. 0 excludes (almost) nothing extra -- only the
+% literal instant each label starts.
+transition_margin_s = 0.5;
 
 % --- Shared thresholds ---
 % TODO speed below which velocity direction, curvature, and "moving" are
@@ -263,6 +284,12 @@ sample.power_w = sample.force_x_n .* sample.vx_m_s + ...
 sample.label = resample_labels_nearest(robot_time_s, robot_label, ...
     sample.time_s);
 
+% Per-sample flag: true within transition_margin_s after ANY label
+% change (entering or leaving "None", or any other label change) --
+% see compute_near_transition_mask() and transition_margin_s above.
+sample.is_near_transition = compute_near_transition_mask( ...
+    sample.time_s, sample.label, transition_margin_s);
+
 %% ================================================================
 % Stage 1: per-sample derived signals, gaze side
 % =================================================================
@@ -384,9 +411,13 @@ feature_rows = cell(window_count, 1);
 % otherwise-kept window would leave a time gap that interp1() inside
 % compute_jerk_series() would silently bridge with a straight line,
 % fabricating motion (and jerk) that never happened. Skipping the whole
-% window sidesteps that rather than risk it.
+% window sidesteps that rather than risk it. The same reasoning is why
+% transition_margin_s (see User Settings) is also a whole-window skip,
+% not a per-sample cut, even for a window that is otherwise 100% one
+% consistent label.
 excluded_none_count = 0;
 excluded_mixed_count = 0;
+excluded_transition_count = 0;
 
 for window_idx = 1:window_count
     first_index = window_bounds(window_idx, 1);
@@ -400,6 +431,9 @@ for window_idx = 1:window_count
         continue;
     elseif purity < 1
         excluded_mixed_count = excluded_mixed_count + 1;
+        continue;
+    elseif any(sample.is_near_transition(window_range))
+        excluded_transition_count = excluded_transition_count + 1;
         continue;
     end
 
@@ -434,9 +468,11 @@ writetable(feature_table, write_features_csv_path);
 
 fprintf(['\nWrote %d of %d candidate windows (%.1f s each, %.0f%% ' ...
     'overlap) to %s\n(excluded: %d unlabeled "None", %d crossed a ' ...
-    'label change).\n'], height(feature_table), window_count, ...
-    window_length_s, 100 * window_overlap_fraction, ...
-    write_features_csv_path, excluded_none_count, excluded_mixed_count);
+    'label change, %d within %.2fs of a label change).\n'], ...
+    height(feature_table), window_count, window_length_s, ...
+    100 * window_overlap_fraction, write_features_csv_path, ...
+    excluded_none_count, excluded_mixed_count, ...
+    excluded_transition_count, transition_margin_s);
 
 
 %% ================================================================
@@ -665,6 +701,34 @@ function resampled_label = resample_labels_nearest( ...
     nearest_index = round(interp1(clean_time_s, ...
         (1:numel(clean_time_s))', query_time_s, 'nearest', 'extrap'));
     resampled_label = clean_label(nearest_index);
+end
+
+
+function is_near_transition = compute_near_transition_mask( ...
+        sample_time_s, sample_label, transition_margin_s)
+%COMPUTE_NEAR_TRANSITION_MASK Per-sample flag: true within
+% transition_margin_s AFTER a label change (entering or leaving
+% "None", or any other label change) -- one-sided, matching "do not
+% use the first transition_margin_s seconds ... when the data switched
+% from one label to the next" (the first sample of the whole trial
+% counts as its own boundary too, so its own margin is excluded the
+% same way).
+%
+% This only ever FLAGS samples; nothing is cut out of sample here --
+% see the Stage 2 loop for why a flagged sample means skipping the
+% whole window it falls in, not removing just that sample.
+
+    label_changed = [true; sample_label(2:end) ~= sample_label(1:end-1)];
+    boundary_times_s = sample_time_s(label_changed);
+
+    is_near_transition = false(size(sample_time_s));
+    for boundary_idx = 1:numel(boundary_times_s)
+        elapsed_since_boundary_s = ...
+            sample_time_s - boundary_times_s(boundary_idx);
+        is_near_transition = is_near_transition | ...
+            (elapsed_since_boundary_s >= 0 & ...
+            elapsed_since_boundary_s <= transition_margin_s);
+    end
 end
 
 

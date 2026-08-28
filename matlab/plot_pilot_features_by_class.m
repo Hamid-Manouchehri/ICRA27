@@ -108,8 +108,8 @@ class_colors = [ ...
 % Lower it to trade that purity for more windows per class.
 minimum_label_purity = 1.0;
 
-% Number of bins per histogram tile (Figures 4-7) is set per feature,
-% not here -- see the 4th column of robot_feature_specs /
+% Bin width per histogram tile (Figures 4-7) is set per feature, not
+% here -- see the 4th column of robot_feature_specs /
 % gaze_feature_specs / fusion_feature_specs / raw_feature_specs below,
 % next to each figure's block.
 
@@ -185,9 +185,10 @@ fprintf('\n');
 % Figure 1: robot features
 % =================================================================
 
-% TODO 4th column: histogram bin count for this feature (Figures 4-7
-% only -- plot_feature_boxplots ignores it), 'auto' or a positive
-% integer, set per feature since one count rarely suits all of them.
+% TODO 4th column: histogram bin WIDTH for this feature, in its own
+% units (Figures 4-7 only -- plot_feature_boxplots ignores it), 'auto'
+% or a positive scalar, set per feature since one width rarely suits
+% all of them.
 robot_feature_specs = { ...
     'mean_force_n', 'Mean |F| [N]', false, 'auto'; ...
     'mean_speed_m_s', 'Mean |v| [m/s]', false, 'auto'; ...
@@ -202,11 +203,11 @@ robot_feature_specs = { ...
     'curvature_sign_reversal_rate_per_m', ...
         'Sign-reversal rate [1/m]', false, 'auto'};
 
-figure('Name', 'Robot features by class', 'Color', 'w');
-tiledlayout(3, 4, 'TileSpacing', 'compact', 'Padding', 'compact');
-plot_feature_boxplots(feature_table, class_labels, class_order, ...
-    class_colors, robot_feature_specs);
-sgtitle('Robot features, distribution by class');
+% figure('Name', 'Robot features by class', 'Color', 'w');
+% tiledlayout(3, 4, 'TileSpacing', 'compact', 'Padding', 'compact');
+% plot_feature_boxplots(feature_table, class_labels, class_order, ...
+%     class_colors, robot_feature_specs);
+% sgtitle('Robot features, distribution by class');
 
 %% ================================================================
 % Figure 2: eye-gaze features
@@ -221,11 +222,11 @@ gaze_feature_specs = { ...
         'Fixation transition angle [deg]', false, 'auto'; ...
     'gaze_dispersion_m', 'Gaze dispersion [m]', false, 'auto'};
 
-figure('Name', 'Eye-gaze features by class', 'Color', 'w');
-tiledlayout(2, 3, 'TileSpacing', 'compact', 'Padding', 'compact');
-plot_feature_boxplots(feature_table, class_labels, class_order, ...
-    class_colors, gaze_feature_specs);
-sgtitle('Eye-gaze features, distribution by class');
+% figure('Name', 'Eye-gaze features by class', 'Color', 'w');
+% tiledlayout(2, 3, 'TileSpacing', 'compact', 'Padding', 'compact');
+% plot_feature_boxplots(feature_table, class_labels, class_order, ...
+%     class_colors, gaze_feature_specs);
+% sgtitle('Eye-gaze features, distribution by class');
 
 %% ================================================================
 % Figure 3: robot + gaze fusion features
@@ -241,11 +242,11 @@ fusion_feature_specs = { ...
         '\kappa at gaze point [1/m]', false, 'auto'; ...
     'fraction_gaze_ahead', 'Fraction gaze ahead [-]', false, 'auto'};
 
-figure('Name', 'Robot+gaze fusion features by class', 'Color', 'w');
-tiledlayout(2, 3, 'TileSpacing', 'compact', 'Padding', 'compact');
-plot_feature_boxplots(feature_table, class_labels, class_order, ...
-    class_colors, fusion_feature_specs);
-sgtitle('Robot+gaze fusion features, distribution by class');
+% figure('Name', 'Robot+gaze fusion features by class', 'Color', 'w');
+% tiledlayout(2, 3, 'TileSpacing', 'compact', 'Padding', 'compact');
+% plot_feature_boxplots(feature_table, class_labels, class_order, ...
+%     class_colors, fusion_feature_specs);
+% sgtitle('Robot+gaze fusion features, distribution by class');
 
 %% ================================================================
 % Figure 4: robot features, histograms
@@ -309,8 +310,8 @@ function plot_feature_boxplots( ...
 %PLOT_FEATURE_BOXPLOTS One boxplot-by-class tile per row of feature_specs.
 %
 % feature_specs is an N-by-3-or-4 cell array: {column_name,
-% y_axis_label, use_log_y_axis[, bin_count]}. Only the first 3 columns
-% are used here; a 4th (bin_count, for plot_feature_histograms) is
+% y_axis_label, use_log_y_axis[, bin_width]}. Only the first 3 columns
+% are used here; a 4th (bin_width, for plot_feature_histograms) is
 % ignored if present -- the same feature_specs variables are passed to
 % both functions. Assumes nexttile()'s tiledlayout is already current
 % and has enough tiles for size(feature_specs, 1).
@@ -342,35 +343,41 @@ function plot_feature_histograms( ...
 % summary statistics.
 %
 % feature_specs is an N-by-4 cell array: {column_name, x_axis_label,
-% use_log_x_axis, bin_count} -- one row per tile, so bin_count is set
-% per feature, not once for the whole figure (a count that suits one
-% feature's spread/sample-count rarely suits all of them). bin_count
-% is 'auto' (defer to histcounts()' own heuristic) or a positive
-% integer forcing exactly that many equal-width bins. Every class
-% within one tile shares that tile's bin edges (computed once from the
-% feature's pooled data across all classes), so the bars stay directly
-% comparable; each class's own bars are separately normalized to
-% 'probability' (sum to 1) rather than raw counts, since the classes
-% have different window counts and raw counts would mostly just show
-% which class has more windows, not how its values are shaped. Bars
-% are drawn semi-transparent and overlaid rather than side by side, so
-% where two classes' distributions overlap is as visible as where they
-% diverge.
+% use_log_x_axis, bin_width} -- one row per tile, so bin_width is set
+% per feature, not once for the whole figure (a width that suits one
+% feature's units/spread rarely suits all of them). bin_width is
+% 'auto' (defer to histcounts()' own heuristic) or a positive scalar
+% giving the width of every bin directly, in that feature's own units
+% (or in log10 units for a log_x_axis feature -- see below). Unlike a
+% bin COUNT, a fixed WIDTH keeps a bin's meaning the same (e.g. "1 N
+% wide") regardless of how many samples happen to be in the pooled
+% data, which is what makes it comparable across figures that draw
+% the same feature at very different sample sizes (Figure 4's window-
+% level mean_force_n vs. Figure 7's raw per-sample force_mag_n, say).
+% Every class within one tile shares that tile's bin edges (computed
+% once from the feature's pooled data across all classes), so the
+% bars stay directly comparable; each class's own bars are separately
+% normalized to 'probability' (sum to 1) rather than raw counts, since
+% the classes have different window/sample counts and raw counts
+% would mostly just show which class has more, not how its values are
+% shaped. Bars are drawn semi-transparent and overlaid rather than
+% side by side, so where two classes' distributions overlap is as
+% visible as where they diverge.
 %
 % use_log_x_axis (DSJ only, matching plot_feature_boxplots' log Y-axis
 % for the same feature) bins in log10 space -- DSJ spans several orders
 % of magnitude (see the file header's near-stationary-window note), so
 % linear bins would put nearly every window in one bar -- then displays
 % the result on a log-scaled x-axis so tick labels stay in real DSJ
-% units instead of log10(DSJ). bin_count still applies here: it counts
-% bins in that log10 space, same as it counts bins in linear units for
-% every other feature.
+% units instead of log10(DSJ). bin_width still applies here, but in
+% log10 units: e.g. bin_width = 0.2 means each bin spans a factor of
+% 10^0.2 (~1.6x) in real DSJ, not an additive width in DSJ itself.
 
     for feature_idx = 1:size(feature_specs, 1)
         column_name = feature_specs{feature_idx, 1};
         x_label = feature_specs{feature_idx, 2};
         use_log_x_axis = feature_specs{feature_idx, 3};
-        bin_count = feature_specs{feature_idx, 4};
+        bin_width = feature_specs{feature_idx, 4};
 
         nexttile;
 
@@ -389,8 +396,8 @@ function plot_feature_histograms( ...
         else
             binning_values = all_values;
         end
-        if isnumeric(bin_count)
-            [~, edges] = histcounts(binning_values, bin_count);
+        if isnumeric(bin_width)
+            [~, edges] = histcounts(binning_values, 'BinWidth', bin_width);
         else
             [~, edges] = histcounts(binning_values);
         end
