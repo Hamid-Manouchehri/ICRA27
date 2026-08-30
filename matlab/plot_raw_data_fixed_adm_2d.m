@@ -72,12 +72,12 @@ script_directory = fileparts(mfilename('fullpath'));
 % TODO controller log written by scripts/ur5e_fixed_adm_2d.py.
 robot_csv_file = fullfile( ...
     script_directory, '..', 'data', 'raw_data', ...
-    'ur5e_fixed_adm_2d_fine_gross_shape_d10_s0.csv');
+    'ur5e_fixed_adm_2d_labeled_scattered_shape_d10_s3.csv');
 
 % TODO matching gaze log from the same trial (same time_s origin).
 gaze_csv_file = fullfile( ...
     script_directory, '..', 'data', 'raw_data', ...
-    'tobii_fixed_adm_2d_fine_gross_shape_d10_s0.csv');
+    'tobii_fixed_adm_2d_labeled_scattered_shape_d10_s3.csv');
 
 % TODO true overlays gaze on the TCP path and draws the gaze figure.
 % Set false to skip every gaze panel, e.g. for a trial recorded without
@@ -90,7 +90,7 @@ plot_gaze_overlay = true;
 % other diagnostics need no calibration.
 calibration_json_file = fullfile( ...
     script_directory, '..', 'data', 'calibrations', ...
-    'tobii_coppelia_reference_calibration_fine_gross_shape_s0.json');
+    'tobii_coppelia_reference_calibration_scattered_shape_s3.json');
 
 % TODO I-VT angular-velocity threshold [deg/s] and minimum retained
 % fixation duration [s] for the gaze panel. Matches
@@ -112,7 +112,7 @@ tobii_to_coppelia_axis_sign = [1.0, 1.0];
 % loop, whose midpoint is taken as the reference path. Accuracy is
 % skipped, with a warning, if this file is missing.
 shape_obj_file = fullfile( ...
-    script_directory, '..', 'data', 'shapes', 'fine_gross_shape.obj');
+    script_directory, '..', 'data', 'shapes', 'scattered_irregular_fine_gross_shape.obj');
 
 % TODO translation from the mesh CAD frame to the CoppeliaSim frame [m].
 % VERIFY THIS before trusting the accuracy number: it sets where the

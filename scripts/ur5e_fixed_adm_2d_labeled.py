@@ -101,14 +101,14 @@ write_data_csv_path = (
     Path(__file__).resolve().parent.parent /
     "data" /
     "raw_data" /
-    "ur5e_fixed_adm_2d_labeled_d50_s1.csv"
+    "ur5e_fixed_adm_2d_labeled_fine_gross_shape_d100_s1.csv"
 )
 # TODO output CSV path [file path]; resolved from this script, not cwd.
 tobii_data_csv_path = (
     Path(__file__).resolve().parent.parent /
     "data" /
     "raw_data" /
-    "tobii_fixed_adm_2d_labeled_d50_s1.csv"
+    "tobii_fixed_adm_2d_labeled_fine_gross_shape_d100_s1.csv"
 )
 # TODO Tobii output CSV path [file path]; one row per Tobii callback sample.
 
@@ -117,6 +117,13 @@ tobii_data_csv_path = (
 # script behaves exactly like ur5e_fixed_adm_2d.py plus one constant
 # extra column.
 enable_keyboard_labeling = True
+
+# Fixed planar admittance settings. Both mass and damping must be positive.
+M_inertia_x = 10.0  # TODO virtual x mass [kg], recommended 1 to 20
+M_inertia_y = 10.0  # TODO virtual y mass [kg], recommended 1 to 20
+
+B_damping_x = 100.0  # TODO fixed x damping [Ns/m], recommended 20 to 120
+B_damping_y = 100.0  # TODO fixed y damping [Ns/m], recommended 20 to 120
 
 # TODO single lowercase character -> label text written to the CSV while
 # that key is held down. Change the keys or labels here; the labeling
@@ -151,20 +158,13 @@ start_joint_acceleration = 0.5  # TODO moveJ acceleration [rad/s^2], 0.1 to 2
 
 control_frequency = 500.0  # TODO UR5e native control rate [Hz], use 500
 dt = 1.0 / control_frequency
-speedl_acceleration = 0.5  # TODO speedL acceleration [m/s^2], 0.1 to 2
-speed_stop_deceleration = 2.0  # TODO speedStop deceleration [m/s^2], 0.5 to 5
-
-# Fixed planar admittance settings. Both mass and damping must be positive.
-M_inertia_x = 10.0  # TODO virtual x mass [kg], recommended 1 to 20
-M_inertia_y = 10.0  # TODO virtual y mass [kg], recommended 1 to 20
-
-B_damping_x = 50.0  # TODO fixed x damping [Ns/m], recommended 20 to 120
-B_damping_y = 50.0  # TODO fixed y damping [Ns/m], recommended 20 to 120
+speedl_acceleration = 1.0  # TODO speedL acceleration [m/s^2], 0.1 to 2
+speed_stop_deceleration = 5.0  # TODO speedStop deceleration [m/s^2], 0.5 to 5
 
 force_lpf_alpha = 0.2  # TODO filter alpha [0, 1]; smaller is smoother
 force_deadband = 1.0  # TODO ignore force noise below this value [N], 0 to 5
 
-max_cart_speed = 0.15  # TODO planar speed limit [m/s], recommended 0.01 to 0.15
+max_cart_speed = 0.4  # TODO planar speed limit [m/s], recommended 0.01 to 0.15
 
 # Axis-aligned rectangular workspace in the UR5e base-frame x-y plane.
 # TODO lower [x, y] corner offsets from startup TCP [m]. Each value must be
@@ -192,9 +192,9 @@ if any(
     )
 
 force_bias_samples = 250  # TODO unloaded samples [count], recommended >= 100
-max_runtime_seconds = 1000  # TODO automatic stop time [s], must be positive
+max_runtime_seconds = 120  # TODO automatic stop time [s], must be positive
 # TODO subject preparation delay before control/recording [s], valid >= 0.
-subject_preparation_time_s = 1.0  # seconds
+subject_preparation_time_s = 0.5  # seconds
 
 # TODO set signs so positive push directions produce positive base-frame motion.
 force_sign_x = 1.0  # TODO x sign [unitless], valid values: -1 or +1
