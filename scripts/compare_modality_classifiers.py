@@ -29,19 +29,23 @@ import pandas as pd
 from sklearn.metrics import ConfusionMatrixDisplay
 
 SCRIPT_DIRECTORY = Path(__file__).resolve().parent
+PROJECT_ROOT = SCRIPT_DIRECTORY.parent
+DATA_DIRECTORY = PROJECT_ROOT / "data"
+PROCESSED_DATA_DIRECTORY = DATA_DIRECTORY / "processed_data"
+IMAGE_DATA_DIRECTORY = DATA_DIRECTORY / "images"
 
 # -------------------- User Settings --------------------
-metrics_csv_path = SCRIPT_DIRECTORY / "metrics_by_modality.csv"
+metrics_csv_path = PROCESSED_DATA_DIRECTORY / "metrics_by_modality.csv"
 modality_order = ["robot", "gaze", "joint"]
 predictions_csv_paths = {
-    modality: SCRIPT_DIRECTORY / f"predictions_{modality}.csv"
+    modality: PROCESSED_DATA_DIRECTORY / f"predictions_{modality}.csv"
     for modality in modality_order
 }
 class_order = ["Fine", "Gross"]
 
-write_comparison_plot_path = SCRIPT_DIRECTORY / "modality_comparison.png"
+write_comparison_plot_path = IMAGE_DATA_DIRECTORY / "modality_comparison.png"
 write_confusion_matrices_plot_path = \
-    SCRIPT_DIRECTORY / "confusion_matrices_by_modality.png"
+    IMAGE_DATA_DIRECTORY / "confusion_matrices_by_modality.png"
 
 
 def main() -> None:

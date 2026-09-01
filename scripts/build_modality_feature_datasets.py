@@ -48,25 +48,26 @@ import classifier_feature_bank as cfb
 
 SCRIPT_DIRECTORY = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIRECTORY.parent
-DATA_DIRECTORY = PROJECT_ROOT / "KD_test" / "data"
+DATA_DIRECTORY = PROJECT_ROOT / "data"
 RAW_DATA_DIRECTORY = DATA_DIRECTORY / "raw_data"
-CALIBRATION_DIRECTORY = DATA_DIRECTORY / "calibration"
+PROCESSED_DATA_DIRECTORY = DATA_DIRECTORY / "processed_data"
+CALIBRATION_DIRECTORY = DATA_DIRECTORY / "calibrations"
 
 # -------------------- User Settings --------------------
 valid_class_labels = ("Fine", "Gross")
 
 write_paths = {
     "robot": {
-        "train": SCRIPT_DIRECTORY / "features_robot_train.csv",
-        "test": SCRIPT_DIRECTORY / "features_robot_test.csv",
+        "train": PROCESSED_DATA_DIRECTORY / "features_robot_train.csv",
+        "test": PROCESSED_DATA_DIRECTORY / "features_robot_test.csv",
     },
     "gaze": {
-        "train": SCRIPT_DIRECTORY / "features_gaze_train.csv",
-        "test": SCRIPT_DIRECTORY / "features_gaze_test.csv",
+        "train": PROCESSED_DATA_DIRECTORY / "features_gaze_train.csv",
+        "test": PROCESSED_DATA_DIRECTORY / "features_gaze_test.csv",
     },
     "joint": {
-        "train": SCRIPT_DIRECTORY / "features_joint_train.csv",
-        "test": SCRIPT_DIRECTORY / "features_joint_test.csv",
+        "train": PROCESSED_DATA_DIRECTORY / "features_joint_train.csv",
+        "test": PROCESSED_DATA_DIRECTORY / "features_joint_test.csv",
     },
 }
 

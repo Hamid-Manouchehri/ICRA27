@@ -36,6 +36,10 @@ from sklearn.metrics import ConfusionMatrixDisplay, classification_report
 import train_modality_classifiers as tmc
 
 SCRIPT_DIRECTORY = Path(__file__).resolve().parent
+PROJECT_ROOT = SCRIPT_DIRECTORY.parent
+DATA_DIRECTORY = PROJECT_ROOT / "data"
+PROCESSED_DATA_DIRECTORY = DATA_DIRECTORY / "processed_data"
+IMAGE_DATA_DIRECTORY = DATA_DIRECTORY / "images"
 
 # -------------------- User Settings --------------------
 # TODO how many top-ranked features (by the already-saved random-forest
@@ -52,7 +56,7 @@ classifier_kwargs = tmc.classifier_kwargs
 
 def train_and_evaluate_top_n(modality: str) -> dict:
     ranking_path = \
-        SCRIPT_DIRECTORY / f"feature_importance_ranking_{modality}.csv"
+        PROCESSED_DATA_DIRECTORY / f"feature_importance_ranking_{modality}.csv"
     if not ranking_path.is_file():
         raise FileNotFoundError(
             f"{ranking_path.name} not found -- run "
@@ -85,19 +89,29 @@ def train_and_evaluate_top_n(modality: str) -> dict:
           f"(top {top_n_features} {modality} features) ===")
     print(report_text)
 
-    fig, ax = plt.subplots(figsize=(6, 5))
+    fig, ax = plt.subplots(figsize=(6, 5.8))
     ConfusionMatrixDisplay.from_predictions(
         y_test, y_predicted, labels=class_order, ax=ax, colorbar=True)
     ax.set_title(
         f"Confusion matrix -- top {top_n_features} {modality} features")
-    fig.tight_layout()
+    # Macro-averaged metrics (2-class problem, so macro treats Fine/Gross
+    # equally regardless of the uneven test-set support) printed under
+    # the matrix, alongside overall accuracy.
+    macro = report_dict["macro avg"]
+    metrics_text = (
+        f"Accuracy: {report_dict['accuracy']:.3f}    "
+        f"Precision (macro): {macro['precision']:.3f}    "
+        f"Recall (macro): {macro['recall']:.3f}    "
+        f"F1-score (macro): {macro['f1-score']:.3f}")
+    fig.text(0.5, 0.02, metrics_text, ha="center", fontsize=9)
+    fig.tight_layout(rect=(0, 0.06, 1, 1))
     fig.savefig(
-        SCRIPT_DIRECTORY /
+        IMAGE_DATA_DIRECTORY /
         f"confusion_matrix_{modality}_top{top_n_features}.png", dpi=150)
     plt.close(fig)
 
     pd.DataFrame({"y_test": y_test, "y_predicted": y_predicted}).to_csv(
-        SCRIPT_DIRECTORY /
+        PROCESSED_DATA_DIRECTORY /
         f"predictions_{modality}_top{top_n_features}.csv", index=False)
 
     row = tmc.flatten_classification_report(modality, report_dict, class_order)
@@ -110,14 +124,14 @@ def main() -> None:
             for modality in modality_csv_paths]
     metrics_table = pd.DataFrame(rows)
     metrics_path = \
-        SCRIPT_DIRECTORY / f"metrics_by_modality_top{top_n_features}.csv"
+        PROCESSED_DATA_DIRECTORY / f"metrics_by_modality_top{top_n_features}.csv"
     metrics_table.to_csv(metrics_path, index=False)
 
     print(f"\n{'=' * 70}\nSummary -- top {top_n_features} features per "
           f"modality (also written to {metrics_path.name})\n{'=' * 70}")
     print(metrics_table.to_string(index=False))
 
-    full_metrics_path = SCRIPT_DIRECTORY / "metrics_by_modality.csv"
+    full_metrics_path = PROCESSED_DATA_DIRECTORY / "metrics_by_modality.csv"
     if full_metrics_path.is_file():
         full_metrics = pd.read_csv(full_metrics_path)
         comparison = full_metrics[["modality", "accuracy", "macro_f1"]].merge(

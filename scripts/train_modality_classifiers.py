@@ -23,6 +23,9 @@ confusion_matrix_robot.png):
   - predictions_<modality>.csv (y_test, y_predicted -- read by
     compare_modality_classifiers.py so it can build a combined view
     without retraining).
+  - model_<modality>.joblib (the fitted model bundled with the exact
+    feature_columns list/order it was trained on -- predict_with_
+    saved_model.py loads this to classify new data without retraining).
 Combined across all three modalities:
   - metrics_by_modality.csv (accuracy + per-class/macro/weighted
     precision/recall/F1, one row per modality) -- also read by
@@ -33,12 +36,14 @@ The classifier is swappable (CLASSIFIER_REGISTRY / classifier_name),
 same mechanism as KD_test/python/train_classifier.py -- one setting
 change applies to all three modality runs at once.
 
-Dependencies: numpy, pandas, scikit-learn, matplotlib
+Dependencies: numpy, pandas, scikit-learn, matplotlib, joblib (joblib
+ships with scikit-learn already, no separate install needed)
   pip install numpy pandas scikit-learn matplotlib
 """
 
 from pathlib import Path
 
+import joblib
 import matplotlib
 matplotlib.use("Agg")  # non-interactive backend -- this script only saves PNGs
 import matplotlib.pyplot as plt
@@ -50,22 +55,26 @@ from sklearn.metrics import ConfusionMatrixDisplay, classification_report
 from sklearn.svm import SVC
 
 SCRIPT_DIRECTORY = Path(__file__).resolve().parent
+PROJECT_ROOT = SCRIPT_DIRECTORY.parent
+DATA_DIRECTORY = PROJECT_ROOT / "data"
+PROCESSED_DATA_DIRECTORY = DATA_DIRECTORY / "processed_data"
+IMAGE_DATA_DIRECTORY = DATA_DIRECTORY / "images"
 
 # -------------------- User Settings --------------------
 # TODO input feature CSVs per modality, as written by
 # build_modality_feature_datasets.py.
 modality_csv_paths = {
     "robot": {
-        "train": SCRIPT_DIRECTORY / "features_robot_train.csv",
-        "test": SCRIPT_DIRECTORY / "features_robot_test.csv",
+        "train": PROCESSED_DATA_DIRECTORY / "features_robot_train.csv",
+        "test": PROCESSED_DATA_DIRECTORY / "features_robot_test.csv",
     },
     "gaze": {
-        "train": SCRIPT_DIRECTORY / "features_gaze_train.csv",
-        "test": SCRIPT_DIRECTORY / "features_gaze_test.csv",
+        "train": PROCESSED_DATA_DIRECTORY / "features_gaze_train.csv",
+        "test": PROCESSED_DATA_DIRECTORY / "features_gaze_test.csv",
     },
     "joint": {
-        "train": SCRIPT_DIRECTORY / "features_joint_train.csv",
-        "test": SCRIPT_DIRECTORY / "features_joint_test.csv",
+        "train": PROCESSED_DATA_DIRECTORY / "features_joint_train.csv",
+        "test": PROCESSED_DATA_DIRECTORY / "features_joint_test.csv",
     },
 }
 
@@ -183,11 +192,20 @@ def train_and_evaluate_modality(modality: str) -> dict:
         y_test, y_predicted, labels=class_order, ax=ax, colorbar=True)
     ax.set_title(f"Confusion matrix -- {classifier_name} ({modality})")
     fig.tight_layout()
-    fig.savefig(SCRIPT_DIRECTORY / f"confusion_matrix_{modality}.png", dpi=150)
+    fig.savefig(IMAGE_DATA_DIRECTORY / f"confusion_matrix_{modality}.png", dpi=150)
     plt.close(fig)
 
     pd.DataFrame({"y_test": y_test, "y_predicted": y_predicted}).to_csv(
-        SCRIPT_DIRECTORY / f"predictions_{modality}.csv", index=False)
+        PROCESSED_DATA_DIRECTORY / f"predictions_{modality}.csv", index=False)
+
+    # --- Save the fitted model, bundled with the exact feature_columns
+    # list/order it expects -- a bare model has no memory of column
+    # names, so predict_with_saved_model.py needs this to select/order
+    # a new CSV's columns correctly rather than guessing. ---
+    joblib.dump(
+        {"model": model, "feature_columns": feature_columns,
+         "classifier_name": classifier_name, "modality": modality},
+        PROCESSED_DATA_DIRECTORY / f"model_{modality}.joblib")
 
     # --- Feature ranking: always a random forest, matching KD_test/
     # python/train_classifier.py's own reasoning -- reuses the already-
@@ -205,7 +223,7 @@ def train_and_evaluate_modality(modality: str) -> dict:
     }).sort_values("importance", ascending=False).reset_index(drop=True)
     ranking_table.insert(0, "rank", np.arange(1, len(ranking_table) + 1))
     ranking_table.to_csv(
-        SCRIPT_DIRECTORY / f"feature_importance_ranking_{modality}.csv",
+        PROCESSED_DATA_DIRECTORY / f"feature_importance_ranking_{modality}.csv",
         index=False)
     print(f"Top 5 {modality} features by importance:")
     print(ranking_table.head(5).to_string(index=False))
@@ -217,7 +235,7 @@ def train_and_evaluate_modality(modality: str) -> dict:
     ax.set_title(f"Top {len(top_features)} {modality} features")
     fig.tight_layout()
     fig.savefig(
-        SCRIPT_DIRECTORY / f"feature_importance_{modality}.png", dpi=150)
+        IMAGE_DATA_DIRECTORY / f"feature_importance_{modality}.png", dpi=150)
     plt.close(fig)
 
     return flatten_classification_report(modality, report_dict, class_order)
@@ -228,7 +246,7 @@ def main() -> None:
             for modality in modality_csv_paths]
     metrics_table = pd.DataFrame(rows)
     metrics_table.to_csv(
-        SCRIPT_DIRECTORY / "metrics_by_modality.csv", index=False)
+        PROCESSED_DATA_DIRECTORY / "metrics_by_modality.csv", index=False)
 
     print(f"\n{'=' * 70}\nSummary (also written to metrics_by_modality.csv)"
           f"\n{'=' * 70}")
