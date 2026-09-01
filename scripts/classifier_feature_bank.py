@@ -1182,8 +1182,13 @@ def calculate_robot_motion(Vx, Vy, Pt) -> dict:
     acceleration_y = np.gradient(Vy, Pt)
     motion["acceleration"] = np.hypot(acceleration_x, acceleration_y)
 
-    curvature = (Vx * acceleration_y - Vy * acceleration_x) / \
-        motion["speed"] ** 3
+    # speed can be exactly 0 at some sample, making this a 0/0 -- the
+    # result there is immediately overwritten by the mask on the next
+    # line, but numpy still warns about the division itself unless
+    # told not to.
+    with np.errstate(divide="ignore", invalid="ignore"):
+        curvature = (Vx * acceleration_y - Vy * acceleration_x) / \
+            motion["speed"] ** 3
     curvature[motion["speed"] < MINIMUM_SPEED_M_S] = np.nan
     motion["curvature"] = curvature
     motion["curvature_dot"] = np.gradient(curvature, Pt)
