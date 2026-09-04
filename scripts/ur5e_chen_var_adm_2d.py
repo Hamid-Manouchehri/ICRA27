@@ -205,7 +205,19 @@ write_data_csv_path = (
     Path(__file__).resolve().parent.parent /
     "data" /
     "raw_data" /
-    "ur5e_chen_var_adm_2d_fine_gross_shape_s0.csv"
+    # "ur5e_chen_var_adm_2d_narrow_pear_shape_clockwise_s15.csv"  # 1
+    # "ur5e_chen_var_adm_2d_wide_fine_gross_shape_counter_clockwise_s15.csv"  # 2
+    # "ur5e_chen_var_adm_2d_wide_ellipse_shape_clockwise_s15.csv"  # 3
+    # "ur5e_chen_var_adm_2d_narrow_fine_gross_shape_clockwise_s15.csv" # 4
+    # "ur5e_chen_var_adm_2d_wide_pear_shape_counter_clockwise_s15.csv" # 5
+    # "ur5e_chen_var_adm_2d_narrow_ellipse_shape_counter_clockwise_s15.csv" # 6
+    # "ur5e_chen_var_adm_2d_wide_fine_gross_shape_clockwise_s15.csv" # 7
+    # "ur5e_chen_var_adm_2d_narrow_pear_shape_counter_clockwise_s15.csv" # 8
+    # "ur5e_chen_var_adm_2d_wide_ellipse_shape_counter_clockwise_s15.csv" # 9
+    # "ur5e_chen_var_adm_2d_narrow_fine_gross_shape_counter_clockwise_s15.csv" # 10
+    # "ur5e_chen_var_adm_2d_wide_pear_shape_clockwise_s15.csv" # 11
+    # "ur5e_chen_var_adm_2d_narrow_ellipse_shape_clockwise_s15.csv" # 12
+    "ur5e_chen_var_adm_2d_test.csv"
 )
 
 # TODO Tobii output CSV path [file path]; one row per Tobii callback.
@@ -215,7 +227,19 @@ tobii_data_csv_path = (
     Path(__file__).resolve().parent.parent /
     "data" /
     "raw_data" /
-    "tobii_chen_var_adm_2d_fine_gross_shape_s0.csv"
+    # "tobii_chen_var_adm_2d_narrow_pear_shape_clockwise_s15.csv" # 1
+    # "tobii_chen_var_adm_2d_wide_fine_gross_shape_counter_clockwise_s15.csv" # 2
+    # "tobii_chen_var_adm_2d_wide_ellipse_shape_clockwise_s15.csv" # 3
+    # "tobii_chen_var_adm_2d_narrow_fine_gross_shape_clockwise_s15.csv" # 4
+    # "tobii_chen_var_adm_2d_wide_pear_shape_counter_clockwise_s15.csv" # 5
+    # "tobii_chen_var_adm_2d_narrow_ellipse_shape_counter_clockwise_s15.csv" # 6
+    # "tobii_chen_var_adm_2d_wide_fine_gross_shape_clockwise_s15.csv" # 7
+    # "tobii_chen_var_adm_2d_narrow_pear_shape_counter_clockwise_s15.csv" # 8
+    # "tobii_chen_var_adm_2d_wide_ellipse_shape_counter_clockwise_s15.csv" # 9
+    # "tobii_chen_var_adm_2d_narrow_fine_gross_shape_counter_clockwise_s15.csv" # 10
+    # "tobii_chen_var_adm_2d_wide_pear_shape_clockwise_s15.csv" # 11
+    # "tobii_chen_var_adm_2d_narrow_ellipse_shape_clockwise_s15.csv" # 12
+    "tobii_chen_var_adm_2d_test.csv"
 )
 
 # --- Admittance model, paper (2) and (7) ---
