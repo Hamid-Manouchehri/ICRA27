@@ -91,12 +91,12 @@ script_directory = fileparts(mfilename('fullpath'));
 % TODO controller log written by scripts/ur5e_chen_var_adm_2d.py.
 robot_csv_file = fullfile( ...
     script_directory, '..', 'data', 'raw_data', ...
-    'ur5e_chen_var_adm_2d_narrow_fine_gross_shape_clockwise_s10.csv');
+    'ur5e_chen_var_adm_2d_narrow_ellipse_shape_counter_clockwise_s17.csv');
 
 % TODO matching gaze log from the same trial (same time_s origin).
 gaze_csv_file = fullfile( ...
     script_directory, '..', 'data', 'raw_data', ...
-    'tobii_chen_var_adm_2d_narrow_fine_gross_shape_clockwise_s10.csv');
+    'tobii_chen_var_adm_2d_narrow_ellipse_shape_counter_clockwise_s17.csv');
 
 % TODO true overlays gaze on the TCP path and draws the gaze figure.
 % Set false to skip every gaze panel, e.g. for a trial recorded without
@@ -109,7 +109,7 @@ plot_gaze_overlay = true;
 % controller diagnostics need no calibration.
 calibration_json_file = fullfile( ...
     script_directory, '..', 'data', 'calibrations', ...
-    'tobii_coppelia_reference_calibration_narrow_fine_gross_shape_clockwise_s10.json');
+    'tobii_coppelia_reference_calibration_narrow_ellipse_shape_counter_clockwise_s17.json');
 
 % TODO these must match the User Settings of the Python controller that
 % produced the CSV. They are only drawn as reference lines; the script
@@ -133,8 +133,12 @@ beta_max = 2.0 / 3.0;
 % (Figure 8). The mesh must be a flat band: an outer and an inner edge
 % loop, whose midpoint is taken as the reference path. Accuracy is
 % skipped, with a warning, if this file is missing.
+% Mesh names add "curved_"/"teeth_" that the CSV tokens omit.
+% Alternates: wide_curved_fine_gross_shape.obj,
+% {wide,narrow}_pear_shape.obj, {wide,narrow}_teeth_ellipse_shape.obj
 shape_obj_file = fullfile( ...
-    script_directory, '..', 'data', 'shapes', 'narrow_fine_gross_shape.obj');
+    script_directory, '..', 'data', 'shapes', ...
+    'narrow_teeth_ellipse_shape.obj');
 
 % TODO translation from the mesh CAD frame to the CoppeliaSim frame [m].
 % VERIFY THIS before trusting the accuracy number: it sets where the
@@ -145,9 +149,9 @@ shape_obj_file = fullfile( ...
 % path, and the summary prints the offset that would minimize the error,
 % so a bad registration is visible rather than silent.
 % current shapes offsets:
-% shape_offset_xy_m = [-0.015, -0.650];  % narrow/wide_teeth_ellipse_shape
+shape_offset_xy_m = [-0.015, -0.650];  % narrow/wide_teeth_ellipse_shape
 % shape_offset_xy_m = [0.025, -0.660];  % narrow/wide_pear_shape
-shape_offset_xy_m = [-0.0, -0.650];  % narrow/wide_fine_gross_shape
+% shape_offset_xy_m = [-0.0, -0.650];  % narrow/wide_fine_gross_shape
 
 % TODO spacing used to resample the reference path [m], positive. The
 % error is the distance to the nearest reference sample, so this sets
