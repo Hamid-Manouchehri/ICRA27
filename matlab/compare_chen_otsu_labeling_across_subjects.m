@@ -32,7 +32,8 @@ directions = ["clockwise", "counter_clockwise"];
 direction_labels = ["CW", "CCW"];
 subject_ids = 10:18;  % add new subjects here
 
-max_rows_per_figure = 6;
+max_rows_per_figure = 6;  % trials per figure
+subplot_columns = 2;  % grid layout, e.g. 3x2 instead of 6x1
 
 damping_column_name = "bd_applied_Ns_m";
 damping_min_n_s_m = 10.0;  % shared damping axis [N s/m]
@@ -44,7 +45,7 @@ otsu_bin_count = 50;
 fine_color = [0.00, 0.45, 0.74];
 gross_color = [0.85, 0.33, 0.10];
 raw_signal_color = [0.75, 0.75, 0.75];
-fixation_color = [1.0, 0.55, 0.55];  % light red, so it doesn't hide the TCP path
+fixation_color = 'g';
 fixation_marker_alpha = 0.5;
 
 tcp_marker_size = 2;
@@ -149,7 +150,9 @@ for group_idx = 1:numel(trial_groups)
         trial_groups(group_idx).bandwidth, numel(trial_groups(group_idx).trials));
 end
 
-%% Plot -- one or more figures per (shape, bandwidth) group
+%% Plot -- TCP paths and damping profiles go in separate figures, one or
+%% more figure pairs per (shape, bandwidth) group, same trial row order
+%% in both so row N of the TCP figure matches row N of the damping figure.
 for group_idx = 1:numel(trial_groups)
     group = trial_groups(group_idx);
     trial_count = numel(group.trials);
@@ -160,16 +163,18 @@ for group_idx = 1:numel(trial_groups)
         row_end = min(figure_idx * max_rows_per_figure, trial_count);
         row_count = row_end - row_start + 1;
 
-        figure('Name', sprintf('Otsu labeling: %s, %s (%d/%d)', ...
+        % ---- Figure: TCP paths, colored by label, fixations overlaid ----
+        figure('Name', sprintf('Otsu labeling -- TCP paths: %s, %s (%d/%d)', ...
             group.shape_label, group.bandwidth, figure_idx, figure_count), ...
             'Color', 'w');
-        tiledlayout(row_count, 2, 'TileSpacing', 'compact', 'Padding', 'compact');
+        grid_columns = min(subplot_columns, row_count);
+        grid_rows = ceil(row_count / grid_columns);
+        tiledlayout(grid_rows, grid_columns, 'TileSpacing', 'compact', 'Padding', 'compact');
 
         for row_idx = 1:row_count
             trial = group.trials(row_start + row_idx - 1);
             is_first_row = row_idx == 1;
 
-            % ---- TCP path, colored by label, fixations in red ----
             nexttile;
             hold on;
             scatter(trial.coppeliasim_x_m(trial.is_fine), ...
@@ -191,8 +196,20 @@ for group_idx = 1:numel(trial_groups)
             if is_first_row
                 legend('Location', 'best', 'FontSize', 7);
             end
+        end
 
-            % ---- Damping vs time: raw gray, moving average colored ----
+        % ---- Figure: damping vs time, raw gray, moving average colored ----
+        figure('Name', sprintf('Otsu labeling -- damping: %s, %s (%d/%d)', ...
+            group.shape_label, group.bandwidth, figure_idx, figure_count), ...
+            'Color', 'w');
+        grid_columns = min(subplot_columns, row_count);
+        grid_rows = ceil(row_count / grid_columns);
+        tiledlayout(grid_rows, grid_columns, 'TileSpacing', 'compact', 'Padding', 'compact');
+
+        for row_idx = 1:row_count
+            trial = group.trials(row_start + row_idx - 1);
+            is_first_row = row_idx == 1;
+
             nexttile;
             hold on;
             plot(trial.time_s, trial.damping_n_s_m, '-', ...
@@ -211,7 +228,8 @@ for group_idx = 1:numel(trial_groups)
             ylim([damping_min_n_s_m, damping_max_n_s_m]);
             xlabel('Time [s]');
             ylabel('Damping [N s/m]');
-            title(sprintf('threshold = %.1f N s/m', trial.threshold_n_s_m));
+            title(sprintf('s%d %s, threshold = %.1f N s/m', ...
+                trial.subject_id, trial.direction_label, trial.threshold_n_s_m));
             if is_first_row
                 legend('Location', 'best', 'FontSize', 7);
             end
