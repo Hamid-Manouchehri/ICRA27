@@ -109,19 +109,19 @@ script_directory = fileparts(mfilename('fullpath'));
 % TODO controller log to label, written by scripts/ur5e_chen_var_adm_2d.py.
 read_robot_csv_file = fullfile( ...
     script_directory, '..', 'data', 'raw_data', ...
-    'ur5e_chen_var_adm_2d_narrow_pear_shape_counter_clockwise_s10.csv');
+    'ur5e_chen_var_adm_2d_narrow_ellipse_shape_counter_clockwise_s17.csv');
 
 % TODO matching gaze log from the same trial (same time_s origin).
 read_gaze_csv_file = fullfile( ...
     script_directory, '..', 'data', 'raw_data', ...
-    'tobii_chen_var_adm_2d_narrow_pear_shape_counter_clockwise_s10.csv');
+    'tobii_chen_var_adm_2d_narrow_ellipse_shape_counter_clockwise_s17.csv');
 
 % TODO calibration JSON mapping Tobii UCS to the CoppeliaSim frame for
 % this subject/shape, used only to overlay gaze on the TCP path plot
 % (does not affect labeling, which comes entirely from the robot log).
 read_calibration_json_file = fullfile( ...
     script_directory, '..', 'data', 'calibrations', ...
-    'tobii_coppelia_reference_calibration_narrow_pear_shape_counter_clockwise_s10.json');
+    'tobii_coppelia_reference_calibration_narrow_ellipse_shape_counter_clockwise_s17.json');
 
 % TODO output directory and file names. Written under processed_data/,
 % not raw_data/, since this is a DERIVED labeling of an already-recorded
@@ -130,9 +130,9 @@ read_calibration_json_file = fullfile( ...
 % that produced it).
 write_output_directory = fullfile(script_directory, '..', 'data', 'processed_data');
 write_robot_labeled_csv_file = fullfile(write_output_directory, ...
-    'ur5e_chen_var_adm_2d_damping_labeled_narrow_pear_shape_counter_clockwise_s10.csv');
+    'ur5e_chen_var_adm_2d_damping_labeled_narrow_pear_shape_counter_clockwise_s17.csv');
 write_gaze_labeled_csv_file = fullfile(write_output_directory, ...
-    'tobii_chen_var_adm_2d_damping_labeled_narrow_pear_shape_counter_clockwise_s10.csv');
+    'tobii_chen_var_adm_2d_damping_labeled_narrow_pear_shape_counter_clockwise_s17.csv');
 
 % TODO histogram resolution for the automatic Otsu threshold [count],
 % > 0 (see the module docstring's "AUTOMATIC, PER-TRIAL THRESHOLD"

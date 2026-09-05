@@ -38,7 +38,13 @@
 %   reported at several smoothing windows because the value depends on
 %   the filter.
 %   Figure 10: effort, paper Eq. (17). Mean interaction force.
-%   Figure 11: replay of the trial. Left tile animates the TCP path, the
+%   Figure 11: velocity/force/damping relationships -- speed vs. force,
+%   damping vs. speed, damping vs. force -- every raw sample (not
+%   restricted to movement samples, unlike Figures 8 to 10, so the full
+%   operating envelope including near-standstill samples is visible),
+%   colored by time so each relationship's evolution over the trial is
+%   visible (same convention as Figure 4's own scatter).
+%   Figure 12: replay of the trial. Left tile animates the TCP path, the
 %   real-time raw gaze point (small green dot, the current instantaneous
 %   gaze position), and the I-VT fixations detected so far (larger red
 %   markers); right tile shows the applied damping at the same instant.
@@ -85,12 +91,12 @@ script_directory = fileparts(mfilename('fullpath'));
 % TODO controller log written by scripts/ur5e_chen_var_adm_2d.py.
 robot_csv_file = fullfile( ...
     script_directory, '..', 'data', 'raw_data', ...
-    'ur5e_chen_var_adm_2d_wide_pear_shape_counter_clockwise_s13.csv');
+    'ur5e_chen_var_adm_2d_narrow_fine_gross_shape_clockwise_s10.csv');
 
 % TODO matching gaze log from the same trial (same time_s origin).
 gaze_csv_file = fullfile( ...
     script_directory, '..', 'data', 'raw_data', ...
-    'tobii_chen_var_adm_2d_wide_pear_shape_counter_clockwise_s13.csv');
+    'tobii_chen_var_adm_2d_narrow_fine_gross_shape_clockwise_s10.csv');
 
 % TODO true overlays gaze on the TCP path and draws the gaze figure.
 % Set false to skip every gaze panel, e.g. for a trial recorded without
@@ -103,7 +109,7 @@ plot_gaze_overlay = true;
 % controller diagnostics need no calibration.
 calibration_json_file = fullfile( ...
     script_directory, '..', 'data', 'calibrations', ...
-    'tobii_coppelia_reference_calibration_wide_pear_shape_counter_clockwise_s13.json');
+    'tobii_coppelia_reference_calibration_narrow_fine_gross_shape_clockwise_s10.json');
 
 % TODO these must match the User Settings of the Python controller that
 % produced the CSV. They are only drawn as reference lines; the script
@@ -128,7 +134,7 @@ beta_max = 2.0 / 3.0;
 % loop, whose midpoint is taken as the reference path. Accuracy is
 % skipped, with a warning, if this file is missing.
 shape_obj_file = fullfile( ...
-    script_directory, '..', 'data', 'shapes', 'wide_pear_shape.obj');
+    script_directory, '..', 'data', 'shapes', 'narrow_fine_gross_shape.obj');
 
 % TODO translation from the mesh CAD frame to the CoppeliaSim frame [m].
 % VERIFY THIS before trusting the accuracy number: it sets where the
@@ -139,15 +145,9 @@ shape_obj_file = fullfile( ...
 % path, and the summary prints the offset that would minimize the error,
 % so a bad registration is visible rather than silent.
 % current shapes offsets:
-% fine_gross_shape: [0.0, -0.645]
-% wide_curved_shape: [0.025, -0.650]
-% narrow_curved_shape: [0.025, -0.638]
-% wide_edge_shape: [0.0, -0.625]
-% narrow_edge_shape: [0.0, -0.633]
-% wide_circle_shape: [-0.01, -0.640]
-% narrow_circle_shape: [-0.01, -0.658]
-% protractor_shape: [-0.025, -0.638]
-shape_offset_xy_m = [0.025, -0.660];
+% shape_offset_xy_m = [-0.015, -0.650];  % narrow/wide_teeth_ellipse_shape
+% shape_offset_xy_m = [0.025, -0.660];  % narrow/wide_pear_shape
+shape_offset_xy_m = [-0.0, -0.650];  % narrow/wide_fine_gross_shape
 
 % TODO spacing used to resample the reference path [m], positive. The
 % error is the distance to the nearest reference sample, so this sets
@@ -172,7 +172,7 @@ jerk_smoothing_window_s = 0.10;
 % computed with the same window.
 jerk_sensitivity_windows_s = [0.05, 0.10, 0.20];
 
-% TODO true plays the Figure 11 replay of the trial. Set false to skip
+% TODO true plays the Figure 12 replay of the trial. Set false to skip
 % it, since it runs in real user time rather than drawing at once.
 animate_evolution = true;
 
@@ -190,20 +190,20 @@ animation_pause_s = 0.001;
 % both the recent motion and the whole history are readable.
 animation_trail_s = 1.5;
 
-% TODO Figure 11 real-time gaze point marker size [points^2] and color.
+% TODO Figure 12 real-time gaze point marker size [points^2] and color.
 % Deliberately smaller than replay_fixation_marker_size below, so the
 % raw, jittery gaze position reads as a transient dot while a detected
 % fixation reads as the more significant event.
 replay_gaze_point_marker_size = 10;
 replay_gaze_point_color = 'g';
 
-% TODO Figure 11 oldest a raw gaze sample may be and still be shown as
+% TODO Figure 12 oldest a raw gaze sample may be and still be shown as
 % "current" [s], positive. Prevents the real-time gaze dot from freezing
 % on a stale position during a gaze-tracking dropout; it disappears
 % instead once no sample this recent exists.
 replay_gaze_point_max_age_s = 0.15;
 
-% TODO Figure 11 fixation marker size [points^2] and color, intentionally
+% TODO Figure 12 fixation marker size [points^2] and color, intentionally
 % separate from fixation_marker_size/fixation_marker_color (Figure 1)
 % so this replay's fixations can be styled differently (bigger, red)
 % without changing Figure 1.
@@ -236,6 +236,13 @@ raw_gaze_marker_size = 4;
 raw_gaze_marker_color = "r";
 fixation_marker_size = 18;
 fixation_marker_color = 'g';
+
+% TODO Figure 11 (velocity/force/damping relationships) marker size
+% [points^2] and transparency [0, 1] -- every raw sample is plotted
+% (tens of thousands per trial), so a low alpha is what actually makes
+% point DENSITY visible instead of one solid blob.
+relationship_marker_size = 6;
+relationship_marker_alpha = 0.15;
 
 %% Load the controller log
 robot_table = readtable(robot_csv_file, ...
@@ -804,7 +811,48 @@ ylabel('Fraction of moving samples [-]');
 title('Force distribution while moving');
 
 %% ================================================================
-% Figure 11: replay of gaze fixations, TCP path, and damping
+% Figure 11: velocity, force, and damping relationships -- every raw
+% sample (not restricted to moving_mask, unlike Figures 8 to 10, so the
+% full operating envelope including near-standstill samples is
+% visible), colored by time so each relationship's evolution over the
+% trial is visible (same convention as Figure 4's own scatter).
+% =================================================================
+
+figure('Name', 'Velocity, force, and damping relationships', 'Color', 'w');
+tiledlayout(1, 3, 'TileSpacing', 'compact', 'Padding', 'compact');
+
+nexttile;
+scatter(force_magnitude_n, speed_actual_m_s, relationship_marker_size, ...
+    time_s, 'filled', 'MarkerFaceAlpha', relationship_marker_alpha);
+grid on;
+speed_force_colorbar = colorbar;
+speed_force_colorbar.Label.String = 'Time [s]';
+xlabel('|F| [N]');
+ylabel('Speed [m/s]');
+title('Speed vs. force');
+
+nexttile;
+scatter(speed_actual_m_s, damping_applied_n_s_m, relationship_marker_size, ...
+    time_s, 'filled', 'MarkerFaceAlpha', relationship_marker_alpha);
+grid on;
+damping_speed_colorbar = colorbar;
+damping_speed_colorbar.Label.String = 'Time [s]';
+xlabel('Speed [m/s]');
+ylabel('Damping [N s/m]');
+title('Damping vs. speed');
+
+nexttile;
+scatter(force_magnitude_n, damping_applied_n_s_m, relationship_marker_size, ...
+    time_s, 'filled', 'MarkerFaceAlpha', relationship_marker_alpha);
+grid on;
+damping_force_colorbar = colorbar;
+damping_force_colorbar.Label.String = 'Time [s]';
+xlabel('|F| [N]');
+ylabel('Damping [N s/m]');
+title('Damping vs. force');
+
+%% ================================================================
+% Figure 12: replay of gaze fixations, TCP path, and damping
 % =================================================================
 % Left tile replays where the operator was looking against where the TCP
 % actually was; right tile shows the damping the controller was applying
