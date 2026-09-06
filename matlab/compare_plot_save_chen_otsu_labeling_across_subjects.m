@@ -5,8 +5,8 @@
 % Same structure as compare_chen_var_adm_2d_across_subjects.m: grouped
 % into one or more figures per (shape, bandwidth) pair, one row per
 % (subject, direction) trial. Threshold is computed PER TRIAL (Otsu on
-% that trial's own smoothed damping), matching label_chen_var_adm_2d_
-% by_damping_threshold.m -- this is a review tool for that labeling,
+% that trial's own smoothed damping), matching label_plot_chen_var_adm_
+% 2d_by_damping_threshold.m -- this is a review tool for that labeling,
 % not a copy of it.
 %
 % SCALABLE: add a new subject_ids entry and rerun. Trials with no gaze/
@@ -14,7 +14,11 @@
 %
 % Inputs: data/raw_data/ur5e_chen_var_adm_2d_<bandwidth>_<shape>_shape_
 %   <direction>_s<id>.csv + matching tobii_* and calibration JSON.
-% Output: figures only. NO LABELED DATA IS SAVED.
+% Output: figures, plus (if save_labeled_csv) one Otsu-labeled robot CSV
+%   per trial -- and a matching gaze CSV when gaze/calibration are
+%   available -- written to data/processed_data/ as
+%   ur5e_chen_var_adm_2d_otsu_labeled_<trial>.csv /
+%   tobii_chen_var_adm_2d_otsu_labeled_<trial>.csv.
 
 clear;
 close all;
@@ -23,8 +27,13 @@ clc;
 script_directory = fileparts(mfilename('fullpath'));
 raw_data_directory = fullfile(script_directory, '..', 'data', 'raw_data');
 calibration_directory = fullfile(script_directory, '..', 'data', 'calibrations');
+processed_data_directory = fullfile(script_directory, '..', 'data', 'processed_data');
 
 %% User Settings
+
+save_labeled_csv = true;  % write per-trial Otsu-labeled CSVs to processed_data/
+plot_only_on_display_gaze = false;
+
 shape_tokens = ["pear", "fine_gross", "ellipse"];
 shape_labels = ["Pear", "Curved Fine/Gross", "Teeth Ellipse"];
 bandwidths = ["wide", "narrow"];
@@ -41,6 +50,7 @@ damping_max_n_s_m = 200.0;
 
 damping_moving_average_window_s = 1.0;  % drives the Otsu label
 otsu_bin_count = 50;
+otsu_min_class_fraction = 0.20;  % min sample share Otsu must put each side
 
 fine_color = [0.00, 0.45, 0.74];
 gross_color = [0.85, 0.33, 0.10];
@@ -54,12 +64,17 @@ line_width = 1.0;
 
 velocity_threshold_deg_s = 20.0;  % I-VT fixation detection
 minimum_fixation_duration_s = 0.060;
-plot_only_on_display_gaze = true;
 
 screen_motion_per_robot_motion = 1.0;
 tobii_to_coppelia_axis_sign = [1.0, 1.0];
 
 %% Discover + label available trials, grouped by shape/bandwidth
+if save_labeled_csv && ~isfolder(processed_data_directory)
+    mkdir(processed_data_directory);
+end
+saved_robot_csv_count = 0;
+saved_gaze_csv_count = 0;
+
 empty_trial = struct('subject_id', {}, 'direction_label', {}, ...
     'time_s', {}, 'coppeliasim_x_m', {}, 'coppeliasim_y_m', {}, ...
     'damping_n_s_m', {}, 'moving_avg_n_s_m', {}, 'is_fine', {}, ...
@@ -91,8 +106,22 @@ for shape_idx = 1:numel(shape_tokens)
                     damping_moving_average_window_s, sample_interval_s, ...
                     numel(damping_n_s_m));
                 moving_avg_n_s_m = movmean(damping_n_s_m, moving_average_sample_count);
-                threshold_n_s_m = otsu_threshold(moving_avg_n_s_m, otsu_bin_count);
+                threshold_n_s_m = otsu_threshold(moving_avg_n_s_m, ...
+                    otsu_bin_count, otsu_min_class_fraction);
                 is_fine = moving_avg_n_s_m > threshold_n_s_m;
+
+                % ---- Save the labeled robot CSV (label appended as the
+                % last column), per trial, to processed_data/ ----
+                if save_labeled_csv
+                    robot_label = repmat("Gross", height(robot_table), 1);
+                    robot_label(is_fine) = "Fine";
+                    robot_table.label = robot_label;
+
+                    write_robot_csv_file = fullfile(processed_data_directory, ...
+                        "ur5e_chen_var_adm_2d_otsu_labeled_" + trial_token + ".csv");
+                    writetable(robot_table, write_robot_csv_file);
+                    saved_robot_csv_count = saved_robot_csv_count + 1;
+                end
 
                 gaze_csv_file = fullfile(raw_data_directory, ...
                     "tobii_chen_var_adm_2d_" + trial_token + ".csv");
@@ -113,6 +142,18 @@ for shape_idx = 1:numel(shape_tokens)
                         velocity_threshold_deg_s, minimum_fixation_duration_s, ...
                         plot_only_on_display_gaze);
                     gaze_available = true;
+
+                    % ---- Save the matching labeled gaze CSV, label
+                    % transferred by nearest robot sample time ----
+                    if save_labeled_csv
+                        gaze_table.label = resample_labels_nearest( ...
+                            robot_time_s, robot_label, gaze_table.time_s);
+
+                        write_gaze_csv_file = fullfile(processed_data_directory, ...
+                            "tobii_chen_var_adm_2d_otsu_labeled_" + trial_token + ".csv");
+                        writetable(gaze_table, write_gaze_csv_file);
+                        saved_gaze_csv_count = saved_gaze_csv_count + 1;
+                    end
                 end
 
                 trials(end + 1) = struct( ...
@@ -148,6 +189,11 @@ fprintf('Found %d (shape, bandwidth) groups:\n', numel(trial_groups));
 for group_idx = 1:numel(trial_groups)
     fprintf('  %s, %s: %d trials\n', trial_groups(group_idx).shape_label, ...
         trial_groups(group_idx).bandwidth, numel(trial_groups(group_idx).trials));
+end
+
+if save_labeled_csv
+    fprintf('Wrote %d labeled robot CSV(s) (%d with a matching gaze CSV) to %s\n', ...
+        saved_robot_csv_count, saved_gaze_csv_count, processed_data_directory);
 end
 
 %% Plot -- TCP paths and damping profiles go in separate figures, one or
@@ -242,10 +288,14 @@ end
 % Local functions
 % =================================================================
 
-function threshold = otsu_threshold(data, bin_count)
+function threshold = otsu_threshold(data, bin_count, min_class_fraction)
 %OTSU_THRESHOLD Data-driven threshold maximizing between-class variance
-% (Otsu, 1979). Copied from label_chen_var_adm_2d_by_damping_
+% (Otsu, 1979). Copied from label_plot_chen_var_adm_2d_by_damping_
 % threshold.m (self-contained here per this project's convention).
+%
+% min_class_fraction excludes splits that put fewer than that fraction
+% of samples on either side, so a small extreme-mean clump (e.g. a
+% damping-saturation event) can't win by isolating itself.
 
     finite_data = data(isfinite(data));
     [counts, edges] = histcounts(finite_data, bin_count);
@@ -262,7 +312,8 @@ function threshold = otsu_threshold(data, bin_count)
         max(total_count - cumulative_count, 1);
 
     between_class_variance = weight0 .* weight1 .* (mean0 - mean1) .^ 2;
-    between_class_variance(weight0 == 0 | weight1 == 0) = -Inf;
+    between_class_variance(weight0 < min_class_fraction | ...
+        weight1 < min_class_fraction) = -Inf;
 
     [~, best_bin_idx] = max(between_class_variance);
     threshold = bin_centers(best_bin_idx);
@@ -272,7 +323,7 @@ end
 function sample_count = window_to_odd_sample_count( ...
         window_s, sample_interval_s, maximum_sample_count)
 %WINDOW_TO_ODD_SAMPLE_COUNT Convert a time window to an odd sample
-% count. Copied from label_chen_var_adm_2d_by_damping_threshold.m.
+% count. Copied from label_plot_chen_var_adm_2d_by_damping_threshold.m.
 
     if window_s <= 0
         sample_count = 1;
@@ -289,6 +340,29 @@ function sample_count = window_to_odd_sample_count( ...
         largest_odd_count = largest_odd_count - 1;
     end
     sample_count = min(sample_count, largest_odd_count);
+end
+
+
+function resampled_label = resample_labels_nearest( ...
+        raw_time_s, raw_label, query_time_s)
+%RESAMPLE_LABELS_NEAREST Nearest-in-time label transfer onto
+% query_time_s. Trimmed single-column form of resample_nearest_multi in
+% label_plot_chen_var_adm_2d_by_damping_threshold.m (self-contained
+% here per this project's convention) -- only "label" needs transferring
+% from the robot's time base onto the gaze log's own timestamps.
+
+    valid_rows = isfinite(raw_time_s);
+    clean_time_s = raw_time_s(valid_rows);
+    clean_label = raw_label(valid_rows);
+
+    [clean_time_s, sort_order] = sort(clean_time_s);
+    clean_label = clean_label(sort_order);
+    [clean_time_s, unique_indices] = unique(clean_time_s, 'stable');
+    clean_label = clean_label(unique_indices);
+
+    nearest_index = round(interp1(clean_time_s, ...
+        (1:numel(clean_time_s))', query_time_s, 'nearest', 'extrap'));
+    resampled_label = clean_label(nearest_index);
 end
 
 

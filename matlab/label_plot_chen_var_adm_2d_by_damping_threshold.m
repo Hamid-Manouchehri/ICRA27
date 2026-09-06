@@ -39,6 +39,16 @@
 % Otsu-picked threshold -- a high ambiguous-sample fraction there means
 % that trial's damping wasn't cleanly bimodal to begin with.
 %
+% otsu_min_class_fraction guards against a specific failure mode: a
+% brief saturation/clamp event (damping pinned near its max for ~1s+)
+% shows up as a small, extreme-mean clump in the histogram, and Otsu's
+% between-class-variance objective will happily isolate that tiny clump
+% as its own "class" instead of splitting the trial's real, larger
+% bimodal structure -- since a huge (mean0-mean1)^2 wins even when one
+% side's weight is tiny. Raising this floor above that clump's sample
+% fraction forces Otsu to only consider splits with a reasonably
+% balanced class size on both sides.
+%
 % SOFT labeling: rather than a bare step function at
 % damping_threshold_n_s_m, the smoothed damping profile is passed
 % through a sigmoid CENTERED on that threshold, giving a continuous
@@ -100,7 +110,7 @@
 %   that script's write_csv_header().
 
 clear;
-close all;
+% close all;
 clc;
 
 script_directory = fileparts(mfilename('fullpath'));
@@ -143,6 +153,10 @@ write_gaze_labeled_csv_file = fullfile(write_output_directory, ...
 % valley. 100 bins over this controller's [10, 200] N s/m band is
 % ~1.9 N s/m/bin, fine-grained without being noise-sensitive.
 otsu_bin_count = 50;
+
+% TODO min sample fraction [0-0.5] Otsu must put on each side of the
+% split -- blocks a rare saturation clump from hijacking the threshold.
+otsu_min_class_fraction = 0.10;
 
 % TODO physical screen motion / robot motion [unitless], must be > 0,
 % and the Tobii UCS axis signs in CoppeliaSim, each -1 or +1. Must match
@@ -251,7 +265,7 @@ damping_moving_average_n_s_m = movmean( ...
 % damping profile -- see the module docstring's "AUTOMATIC, PER-TRIAL
 % THRESHOLD" section for the reasoning.
 damping_threshold_n_s_m = otsu_threshold( ...
-    damping_moving_average_n_s_m, otsu_bin_count);
+    damping_moving_average_n_s_m, otsu_bin_count, otsu_min_class_fraction);
 
 % Soft label: sigmoid centered on damping_threshold_n_s_m, applied to
 % the SMOOTHED damping profile above -- see the module docstring's
@@ -525,7 +539,7 @@ fprintf('\nWrote:\n  %s\n  %s\n', write_robot_labeled_csv_file, ...
 % Local functions
 % =================================================================
 
-function threshold = otsu_threshold(data, bin_count)
+function threshold = otsu_threshold(data, bin_count, min_class_fraction)
 %OTSU_THRESHOLD Data-driven threshold that best separates data into two
 % groups, by maximizing between-class variance (Otsu, 1979) -- the
 % standard automatic-thresholding method for a (possibly) bimodal
@@ -538,6 +552,11 @@ function threshold = otsu_threshold(data, bin_count)
 % still returns SOME threshold (whichever split maximizes between-class
 % variance), just not as meaningful a "valley between two peaks" one --
 % see the module docstring's note on checking sample_weight afterward.
+%
+% min_class_fraction excludes splits that put fewer than that fraction
+% of samples on either side, so a small extreme-mean clump (e.g. a
+% damping-saturation event) can't win by isolating itself -- see the
+% module docstring's note on otsu_min_class_fraction.
 
     finite_data = data(isfinite(data));
     [counts, edges] = histcounts(finite_data, bin_count);
@@ -556,9 +575,11 @@ function threshold = otsu_threshold(data, bin_count)
 
     between_class_variance = weight0 .* weight1 .* (mean0 - mean1) .^ 2;
     % A split with an empty side (weight0 or weight1 == 0) is
-    % meaningless -- excluded rather than left to win on a degenerate
-    % (near-zero-sample) mean.
-    between_class_variance(weight0 == 0 | weight1 == 0) = -Inf;
+    % meaningless, and one below min_class_fraction is too unbalanced
+    % to trust -- both excluded rather than left to win on a small,
+    % extreme-mean clump.
+    between_class_variance(weight0 < min_class_fraction | ...
+        weight1 < min_class_fraction) = -Inf;
 
     [~, best_bin_idx] = max(between_class_variance);
     threshold = bin_centers(best_bin_idx);
