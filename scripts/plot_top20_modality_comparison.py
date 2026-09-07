@@ -52,11 +52,41 @@ IMAGE_DATA_DIRECTORY = clfs.IMAGE_DATA_DIRECTORY
 # -------------------- User Settings --------------------
 # TODO the three sets to compare, as (display_label, feature_set_key)
 # -- feature_set_key must be one of build_feature_sets()'s keys.
+# panels = (
+#     ("Robot-only", "robot"),
+#     ("Gaze-only", "gaze_pure"),
+#     ("Joint", "joint"),
+# )
+
+# TODO robot features to drop before ranking/evaluating "robot_no_
+# position" -- raw X/Y location, which correlates with curvature by
+# construction (shape geometry is fixed per bandwidth/shape), so
+# leaving these in lets the classifier learn "where on the shape am I"
+# instead of "how is the person behaving."
+positional_feature_names = {
+    "mean_position_x", "mean_position_y", "std_position_x", "std_position_y",
+    "variance_position_x", "variance_position_y", "minimum_position_x",
+    "maximum_position_x", "range_position_x", "minimum_position_y",
+    "maximum_position_y", "range_position_y", "median_position_x",
+    "median_position_y", "iqr_position_x", "iqr_position_y",
+    "mad_position_x", "mad_position_y", "skewness_position_x",
+    "skewness_position_y", "kurtosis_position_x", "kurtosis_position_y",
+    "covariance_position_xy", "correlation_position_xy",
+    "position_dispersion_rms", "position_bcea_68",
+    "position_x_shannon_entropy", "position_y_shannon_entropy",
+    "position_x_mean_crossing_count", "position_y_mean_crossing_count",
+    "position_x_lag1_autocorrelation", "position_y_lag1_autocorrelation",
+}
+
+# TODO the three sets to compare, as (display_label, feature_set_key)
+# -- feature_set_key must be one of build_feature_sets()'s keys, or
+# "robot_no_position" (added in main() below).
 panels = (
-    ("Robot-only", "robot"),
+    ("Robot (no position)", "robot_no_position"),
     ("Gaze-only", "gaze_pure"),
     ("Joint", "joint"),
 )
+
 top_n_features = 20
 random_seed = clfs.random_seed
 
@@ -160,16 +190,24 @@ def build_feature_ranking_figure(results: list, output_path: Path) -> None:
 
 
 def main() -> None:
+    # feature_sets = clfs.build_feature_sets()
+
     feature_sets = clfs.build_feature_sets()
+    robot_table, robot_features = feature_sets["robot"]
+    filtered_features = [f for f in robot_features if f not in positional_feature_names]
+    feature_sets["robot_no_position"] = (robot_table, filtered_features)
+    print(f"robot_no_position: {len(robot_features)} -> {len(filtered_features)} features "
+        f"({len(robot_features) - len(filtered_features)} positional dropped)")
+    
     results = gather_results(feature_sets)
 
     IMAGE_DATA_DIRECTORY.mkdir(parents=True, exist_ok=True)
     build_confusion_matrix_figure(
         results,
-        IMAGE_DATA_DIRECTORY / f"top20_confusion_matrix_{clfs.dataset_name}.png")
+        IMAGE_DATA_DIRECTORY / f"top20_confusion_matrix_{clfs.dataset_name}_remove_positional_features.png")
     build_feature_ranking_figure(
         results,
-        IMAGE_DATA_DIRECTORY / f"top20_feature_ranking_{clfs.dataset_name}.png")
+        IMAGE_DATA_DIRECTORY / f"top20_feature_ranking_{clfs.dataset_name}_remove_positional_features.png")
 
 
 if __name__ == "__main__":

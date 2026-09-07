@@ -91,12 +91,12 @@ script_directory = fileparts(mfilename('fullpath'));
 % TODO controller log written by scripts/ur5e_chen_var_adm_2d.py.
 robot_csv_file = fullfile( ...
     script_directory, '..', 'data', 'raw_data', ...
-    'ur5e_chen_var_adm_2d_narrow_ellipse_shape_counter_clockwise_s17.csv');
+    'ur5e_chen_var_adm_2d_narrow_pear_shape_counter_clockwise_s10.csv');
 
 % TODO matching gaze log from the same trial (same time_s origin).
 gaze_csv_file = fullfile( ...
     script_directory, '..', 'data', 'raw_data', ...
-    'tobii_chen_var_adm_2d_narrow_ellipse_shape_counter_clockwise_s17.csv');
+    'tobii_chen_var_adm_2d_narrow_pear_shape_counter_clockwise_s10.csv');
 
 % TODO true overlays gaze on the TCP path and draws the gaze figure.
 % Set false to skip every gaze panel, e.g. for a trial recorded without
@@ -109,7 +109,7 @@ plot_gaze_overlay = true;
 % controller diagnostics need no calibration.
 calibration_json_file = fullfile( ...
     script_directory, '..', 'data', 'calibrations', ...
-    'tobii_coppelia_reference_calibration_narrow_ellipse_shape_counter_clockwise_s17.json');
+    'tobii_coppelia_reference_calibration_narrow_pear_shape_counter_clockwise_s17.json');
 
 % TODO these must match the User Settings of the Python controller that
 % produced the CSV. They are only drawn as reference lines; the script
@@ -138,7 +138,7 @@ beta_max = 2.0 / 3.0;
 % {wide,narrow}_pear_shape.obj, {wide,narrow}_teeth_ellipse_shape.obj
 shape_obj_file = fullfile( ...
     script_directory, '..', 'data', 'shapes', ...
-    'narrow_teeth_ellipse_shape.obj');
+    'narrow_pear_shape.obj');
 
 % TODO translation from the mesh CAD frame to the CoppeliaSim frame [m].
 % VERIFY THIS before trusting the accuracy number: it sets where the
@@ -149,8 +149,8 @@ shape_obj_file = fullfile( ...
 % path, and the summary prints the offset that would minimize the error,
 % so a bad registration is visible rather than silent.
 % current shapes offsets:
-shape_offset_xy_m = [-0.015, -0.650];  % narrow/wide_teeth_ellipse_shape
-% shape_offset_xy_m = [0.025, -0.660];  % narrow/wide_pear_shape
+% shape_offset_xy_m = [-0.015, -0.650];  % narrow/wide_teeth_ellipse_shape
+shape_offset_xy_m = [0.025, -0.660];  % narrow/wide_pear_shape
 % shape_offset_xy_m = [-0.0, -0.650];  % narrow/wide_fine_gross_shape
 
 % TODO spacing used to resample the reference path [m], positive. The
@@ -957,60 +957,58 @@ if animate_evolution
     title(damping_axes, 'Applied damping, Eq. (7)');
     legend(damping_axes, 'Location', 'best', 'FontSize', 7);
 
-    % ---- Bottom-right tile: gaze and fixation distance from the TCP,
-    % over time. Distance from the raw gaze point to the TCP position at
-    % the same instant, interpolated onto the gaze sample times since
-    % gaze runs slower (~60 Hz) than the controller (500 Hz). This is
-    % the temporal companion to the spatial replay: a rise in this
-    % distance just before a turn is what "gaze leads the TCP" looks
-    % like on a time axis. Fixations are overlaid on the same distance
-    % curve, at their own mid-time, so a fixation event's timing and its
-    % distance from the TCP are both visible together.
+    % ---- Bottom-right tile: TCP x/y position, over time. Same position
+    % data as the left tile's spatial replay, decomposed into x(t) and
+    % y(t) on the time base shared with the damping panel above it.
+    % Fixations are overlaid at the TCP's position at their own
+    % mid-time (interpolated, since fixations are timestamped
+    % independently of the 500 Hz robot clock), so a fixation event's
+    % timing lines up with where the TCP was at that instant.
     gaze_temporal_axes = nexttile;
     hold(gaze_temporal_axes, 'on');
 
-    have_gaze_distance = gaze_calibrated && ~isempty(raw_gaze_xy_m);
-    if have_gaze_distance
-        tcp_x_at_gaze_m = interp1(time_s, coppeliasim_x_m, ...
-            raw_gaze_time_s, 'linear', 'extrap');
-        tcp_y_at_gaze_m = interp1(time_s, coppeliasim_y_m, ...
-            raw_gaze_time_s, 'linear', 'extrap');
-        gaze_to_tcp_distance_mm = 1e3 * hypot( ...
-            raw_gaze_xy_m(:, 1) - tcp_x_at_gaze_m, ...
-            raw_gaze_xy_m(:, 2) - tcp_y_at_gaze_m);
+    tcp_x_color = [0.10, 0.55, 0.20];
+    tcp_y_color = [0.30, 0.30, 0.85];
 
-        plot(gaze_temporal_axes, raw_gaze_time_s, ...
-            gaze_to_tcp_distance_mm, '-', 'Color', [0.85, 0.85, 0.85], ...
-            'LineWidth', 0.8, 'DisplayName', ...
-            'Gaze-TCP distance (whole trial)');
-    end
+    plot(gaze_temporal_axes, time_s, coppeliasim_x_m, '-', ...
+        'Color', [0.85, 0.85, 0.85], 'LineWidth', 0.8, ...
+        'DisplayName', 'TCP x (whole trial)');
+    plot(gaze_temporal_axes, time_s, coppeliasim_y_m, '-', ...
+        'Color', [0.85, 0.85, 0.85], 'LineWidth', 0.8, ...
+        'HandleVisibility', 'off');
 
-    gaze_distance_trail_handle = plot(gaze_temporal_axes, NaN, NaN, ...
-        '-', 'Color', [0.10, 0.55, 0.20], 'LineWidth', 1.2, ...
-        'DisplayName', 'Gaze-TCP distance so far');
-    gaze_distance_marker_handle = plot(gaze_temporal_axes, NaN, NaN, ...
-        'o', 'MarkerSize', 7, 'MarkerFaceColor', [0.10, 0.55, 0.20], ...
-        'MarkerEdgeColor', 'k', 'DisplayName', 'Gaze-TCP distance now');
+    tcp_x_trail_handle = plot(gaze_temporal_axes, NaN, NaN, ...
+        '-', 'Color', tcp_x_color, 'LineWidth', 1.2, ...
+        'DisplayName', 'TCP x so far');
+    tcp_x_marker_handle = plot(gaze_temporal_axes, NaN, NaN, ...
+        'o', 'MarkerSize', 7, 'MarkerFaceColor', tcp_x_color, ...
+        'MarkerEdgeColor', 'k', 'DisplayName', 'TCP x now');
+    tcp_y_trail_handle = plot(gaze_temporal_axes, NaN, NaN, ...
+        '-', 'Color', tcp_y_color, 'LineWidth', 1.2, ...
+        'DisplayName', 'TCP y so far');
+    tcp_y_marker_handle = plot(gaze_temporal_axes, NaN, NaN, ...
+        'o', 'MarkerSize', 7, 'MarkerFaceColor', tcp_y_color, ...
+        'MarkerEdgeColor', 'k', 'DisplayName', 'TCP y now');
 
-    have_fixation_distance = have_gaze_distance && ~isempty(fixation_xy_m);
-    if have_fixation_distance
+    have_fixation_position = gaze_calibrated && ~isempty(fixation_xy_m);
+    if have_fixation_position
         tcp_x_at_fixation_m = interp1(time_s, coppeliasim_x_m, ...
             fixation_time_s, 'linear', 'extrap');
         tcp_y_at_fixation_m = interp1(time_s, coppeliasim_y_m, ...
             fixation_time_s, 'linear', 'extrap');
-        fixation_to_tcp_distance_mm = 1e3 * hypot( ...
-            fixation_xy_m(:, 1) - tcp_x_at_fixation_m, ...
-            fixation_xy_m(:, 2) - tcp_y_at_fixation_m);
     end
-    fixation_distance_handle = scatter(gaze_temporal_axes, NaN, NaN, ...
-        replay_fixation_marker_size, replay_fixation_marker_color, ...
-        'filled', 'DisplayName', 'Fixations so far');
+    fixation_x_handle = scatter(gaze_temporal_axes, NaN, NaN, ...
+        replay_fixation_marker_size, tcp_x_color, 'filled', ...
+        'MarkerFaceAlpha', 0.7, 'DisplayName', 'Fixation (TCP x) so far');
+    fixation_y_handle = scatter(gaze_temporal_axes, NaN, NaN, ...
+        replay_fixation_marker_size, tcp_y_color, 'filled', ...
+        'MarkerFaceAlpha', 0.7, 'DisplayName', 'Fixation (TCP y) so far');
 
     grid(gaze_temporal_axes, 'on');
     xlim(gaze_temporal_axes, [time_s(1), time_s(end)]);
     xlabel(gaze_temporal_axes, 'Time [s]');
-    ylabel(gaze_temporal_axes, 'Distance from TCP [mm]');
-    title(gaze_temporal_axes, 'Gaze and fixation distance from the TCP');
+    ylabel(gaze_temporal_axes, 'CoppeliaSim position [m]');
+    title(gaze_temporal_axes, 'TCP x/y position, with fixation timing');
     legend(gaze_temporal_axes, 'Location', 'best', 'FontSize', 7);
 
     % Shared time axis with the damping panel directly above it.
@@ -1033,6 +1031,20 @@ if animate_evolution
             'XData', coppeliasim_x_m(sample_idx), ...
             'YData', coppeliasim_y_m(sample_idx));
 
+        % TCP x/y temporal tile -- shares sample_idx/now_s with the
+        % spatial replay above, so no separate causal lookup is needed
+        % (unlike gaze, which runs at its own, slower sample rate).
+        set(tcp_x_trail_handle, ...
+            'XData', time_s(1:sample_idx), ...
+            'YData', coppeliasim_x_m(1:sample_idx));
+        set(tcp_x_marker_handle, ...
+            'XData', now_s, 'YData', coppeliasim_x_m(sample_idx));
+        set(tcp_y_trail_handle, ...
+            'XData', time_s(1:sample_idx), ...
+            'YData', coppeliasim_y_m(1:sample_idx));
+        set(tcp_y_marker_handle, ...
+            'XData', now_s, 'YData', coppeliasim_y_m(sample_idx));
+
         if gaze_calibrated && ~isempty(raw_gaze_xy_m)
             % Most recent raw gaze sample at or before now_s (causal, no
             % lookahead). Hidden instead of frozen when the newest such
@@ -1047,19 +1059,8 @@ if animate_evolution
                 set(gaze_point_handle, ...
                     'XData', raw_gaze_xy_m(gaze_now_idx, 1), ...
                     'YData', raw_gaze_xy_m(gaze_now_idx, 2));
-                set(gaze_distance_marker_handle, ...
-                    'XData', now_s, ...
-                    'YData', gaze_to_tcp_distance_mm(gaze_now_idx));
             else
                 set(gaze_point_handle, 'XData', NaN, 'YData', NaN);
-                set(gaze_distance_marker_handle, 'XData', NaN, 'YData', NaN);
-            end
-
-            gaze_shown_mask = raw_gaze_time_s <= now_s;
-            if any(gaze_shown_mask)
-                set(gaze_distance_trail_handle, ...
-                    'XData', raw_gaze_time_s(gaze_shown_mask), ...
-                    'YData', gaze_to_tcp_distance_mm(gaze_shown_mask));
             end
         end
 
@@ -1070,16 +1071,13 @@ if animate_evolution
                     'XData', fixation_xy_m(shown_mask, 1), ...
                     'YData', fixation_xy_m(shown_mask, 2));
 
-                % have_fixation_distance additionally requires raw gaze
-                % (both-eyes-valid) data, which fixation_xy_m itself does
-                % not: fixations tolerate a single-eye fallback, so a
-                % trial could have fixations with no both-eyes-valid
-                % sample at all, leaving fixation_to_tcp_distance_mm
-                % unset.
-                if have_fixation_distance
-                    set(fixation_distance_handle, ...
+                if have_fixation_position
+                    set(fixation_x_handle, ...
                         'XData', fixation_time_s(shown_mask), ...
-                        'YData', fixation_to_tcp_distance_mm(shown_mask));
+                        'YData', tcp_x_at_fixation_m(shown_mask));
+                    set(fixation_y_handle, ...
+                        'XData', fixation_time_s(shown_mask), ...
+                        'YData', tcp_y_at_fixation_m(shown_mask));
                 end
             end
         end
