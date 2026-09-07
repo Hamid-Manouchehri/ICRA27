@@ -142,7 +142,8 @@ def run_loso_for_modality(modality: str) -> dict:
     fold_table = fold_table[
         ["subject"] + [c for c in fold_table.columns if c != "subject"]]
     fold_table.to_csv(
-        PROCESSED_DATA_DIRECTORY / f"loso_fold_results_{modality}.csv",
+        PROCESSED_DATA_DIRECTORY /
+        f"loso_fold_results_{modality}_{tmc.dataset_name}.csv",
         index=False)
 
     all_true = np.concatenate(all_true)
@@ -180,7 +181,8 @@ def plot_loso_results(
     fig.tight_layout()
     fig.savefig(
         IMAGE_DATA_DIRECTORY /
-        f"loso_accuracy_by_subject_{modality}{filename_suffix}.png",
+        f"loso_accuracy_by_subject_{modality}_{tmc.dataset_name}"
+        f"{filename_suffix}.png",
         dpi=150)
     plt.close(fig)
 
@@ -199,7 +201,8 @@ def plot_loso_results(
     fig.tight_layout(rect=(0, 0.06, 1, 1))
     fig.savefig(
         IMAGE_DATA_DIRECTORY /
-        f"loso_confusion_matrix_{modality}{filename_suffix}.png", dpi=150)
+        f"loso_confusion_matrix_{modality}_{tmc.dataset_name}"
+        f"{filename_suffix}.png", dpi=150)
     plt.close(fig)
 
 
@@ -207,14 +210,16 @@ def main() -> None:
     pooled_rows = [
         run_loso_for_modality(modality) for modality in modality_csv_paths]
     summary_table = pd.DataFrame(pooled_rows)
-    summary_path = PROCESSED_DATA_DIRECTORY / "loso_metrics_by_modality.csv"
+    summary_path = (PROCESSED_DATA_DIRECTORY /
+                    f"loso_metrics_by_modality_{tmc.dataset_name}.csv")
     summary_table.to_csv(summary_path, index=False)
 
     print(f"\n{'=' * 70}\nLOSO summary -- pooled over every held-out "
           f"subject (also written to {summary_path.name})\n{'=' * 70}")
     print(summary_table.to_string(index=False))
 
-    full_metrics_path = PROCESSED_DATA_DIRECTORY / "metrics_by_modality.csv"
+    full_metrics_path = (PROCESSED_DATA_DIRECTORY /
+                         f"metrics_by_modality_{tmc.dataset_name}.csv")
     if full_metrics_path.is_file():
         full_metrics = pd.read_csv(full_metrics_path)
         comparison = full_metrics[["modality", "accuracy", "macro_f1"]].merge(

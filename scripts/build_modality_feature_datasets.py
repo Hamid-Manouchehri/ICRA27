@@ -32,10 +32,35 @@ What's new/different from the KD_test single-modality version:
     being evaluated, not different feature content.
   - Output is six CSVs (train/test x robot/gaze/joint), not two.
 
+DATASETS: dataset_name selects which labeled trials to build from, via
+DATASET_REGISTRY below. Two are defined:
+  - "fixed_pilot": the original hand-labeled pilot trials in raw_data/
+    (shape x damping x subject), the dataset every earlier result used.
+  - "chen_otsu": the Otsu-labeled Chen trials written to
+    processed_data/ by compare_chen_otsu_labeling_across_subjects.m
+    (bandwidth x shape x direction x subject).
+Each entry carries its own filename pattern and its own CONDITION
+fields, which become the per-window metadata columns -- so the pilot
+set keeps shape/damping_n_s_m and the Chen set gets bandwidth/shape/
+direction instead. Both are excluded from every feature matrix.
+
+CIRCULARITY WARNING for "chen_otsu": that label is thresholded smoothed
+bd_applied_Ns_m, and ur5e_chen_var_adm_2d.py's compute_direct_damping()
+makes bd_applied a deterministic linear function of filtered force
+magnitude alone (200 N s/m at |F| <= 1 N down to 10 N s/m at |F| >=
+11 N). Measured on these trials, smoothed damping and smoothed |F|
+correlate at -0.99, and a plain force threshold reproduces the Otsu
+label 94-98% of the time. A robot or joint classifier trained on it is
+therefore largely re-deriving the controller's own equation, and its
+accuracy says nothing about behaviour. The gaze bank shares no input
+with the label, so gaze-only is the honest experiment -- hence the
+default modalities_to_build below.
+
 Dependencies: numpy, pandas, scikit-learn
   pip install numpy pandas scikit-learn
 """
 
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -54,20 +79,57 @@ PROCESSED_DATA_DIRECTORY = DATA_DIRECTORY / "processed_data"
 CALIBRATION_DIRECTORY = DATA_DIRECTORY / "calibrations"
 
 # -------------------- User Settings --------------------
+# TODO which labeled dataset to build from -- a key of DATASET_REGISTRY
+# below ("chen_otsu" or "fixed_pilot").
+dataset_name = "chen_otsu"
+
+# TODO which modality tables to build and write, any of "robot",
+# "gaze", "joint". Read the docstring's CIRCULARITY WARNING before
+# interpreting robot or joint numbers on an Otsu-labeled dataset --
+# they are built here to quantify gaze's marginal contribution, not as
+# standalone results.
+modalities_to_build = ("robot", "gaze", "joint")
+
+# TODO robot CSV stems (filename, no extension) to skip regardless of
+# dataset -- trials flagged as unreliable during the calibration audit
+# (Tier 3: statistically flagged, judged too risky to label/train on).
+excluded_trial_stems = frozenset({
+    "ur5e_chen_var_adm_2d_otsu_labeled_narrow_fine_gross_shape_"
+    "counter_clockwise_s14",
+    "ur5e_chen_var_adm_2d_otsu_labeled_wide_fine_gross_shape_"
+    "counter_clockwise_s16",
+})
+
+# TODO cache each trial's windows under processed_data/feature_cache/
+# so an interrupted run resumes instead of restarting from zero. The
+# cache key includes every feature-affecting setting, so it self-
+# invalidates; delete the directory to force a full rebuild.
+use_trial_cache = True
+
 valid_class_labels = ("Fine", "Gross")
 
+# Output names carry dataset_name so two datasets' feature tables can
+# coexist instead of one silently overwriting the other. The original
+# pilot run predates this and left unsuffixed features_*_{train,test}
+# .csv files; rename those to *_fixed_pilot.csv to reuse them here.
 write_paths = {
     "robot": {
-        "train": PROCESSED_DATA_DIRECTORY / "features_robot_train.csv",
-        "test": PROCESSED_DATA_DIRECTORY / "features_robot_test.csv",
+        "train": PROCESSED_DATA_DIRECTORY /
+                 f"features_robot_train_{dataset_name}.csv",
+        "test": PROCESSED_DATA_DIRECTORY /
+                f"features_robot_test_{dataset_name}.csv",
     },
     "gaze": {
-        "train": PROCESSED_DATA_DIRECTORY / "features_gaze_train.csv",
-        "test": PROCESSED_DATA_DIRECTORY / "features_gaze_test.csv",
+        "train": PROCESSED_DATA_DIRECTORY /
+                 f"features_gaze_train_{dataset_name}.csv",
+        "test": PROCESSED_DATA_DIRECTORY /
+                f"features_gaze_test_{dataset_name}.csv",
     },
     "joint": {
-        "train": PROCESSED_DATA_DIRECTORY / "features_joint_train.csv",
-        "test": PROCESSED_DATA_DIRECTORY / "features_joint_test.csv",
+        "train": PROCESSED_DATA_DIRECTORY /
+                 f"features_joint_train_{dataset_name}.csv",
+        "test": PROCESSED_DATA_DIRECTORY /
+                f"features_joint_test_{dataset_name}.csv",
     },
 }
 
@@ -78,7 +140,11 @@ minimum_gaze_samples = 6
 minimum_robot_samples = 10
 
 # --- Ground-truth class label ---
-transition_margin_s = 1.5
+# TODO drop windows within this margin [s] of a label change. 1.5 suited
+# the pilot set's long scripted blocks; Otsu labels flip far more often
+# (median segment 3.5 s, 36% shorter than 3 s), where 1.5 kept only ~38%
+# of samples on average and 5% on the worst trial.
+transition_margin_s = 0.25
 edge_trim_s = 1.5
 
 # --- Calibrated Tobii-UCS -> CoppeliaSim gaze mapping ---
@@ -101,31 +167,78 @@ random_seed = 42
 
 # ======================================================================
 # Stage 0: discover every (robot, gaze, calibration) trial by filename.
-# Identical to KD_test/python/build_feature_dataset.py's discover_trials().
+# Same logic as KD_test/python/build_feature_dataset.py's
+# discover_trials(), generalized over DATASET_REGISTRY so the pilot and
+# Chen datasets differ only by their filename patterns and condition
+# fields -- see the module docstring's DATASETS section.
 # ======================================================================
 
-TRIAL_FILENAME_PATTERN = re.compile(
-    r"^ur5e_fixed_adm_2d_labeled_(?P<shape>.+)_d(?P<damping>\d+)"
-    r"_s(?P<subject>\d+)\.csv$")
+DATASET_REGISTRY = {
+    "fixed_pilot": dict(
+        robot_directory=RAW_DATA_DIRECTORY,
+        robot_glob="ur5e_fixed_adm_2d_labeled_*.csv",
+        robot_pattern=re.compile(
+            r"^ur5e_fixed_adm_2d_labeled_(?P<shape>.+)"
+            r"_d(?P<damping_n_s_m>\d+)_s(?P<subject>\d+)\.csv$"),
+        gaze_name=("tobii_fixed_adm_2d_labeled_{shape}_d{damping_n_s_m}"
+                   "_s{subject}.csv"),
+        calibration_name=("tobii_coppelia_reference_calibration_{shape}"
+                          "_s{subject}.json"),
+        condition_fields=("shape", "damping_n_s_m"),
+    ),
+    "chen_otsu": dict(
+        robot_directory=PROCESSED_DATA_DIRECTORY,
+        robot_glob="ur5e_chen_var_adm_2d_otsu_labeled_*.csv",
+        robot_pattern=re.compile(
+            r"^ur5e_chen_var_adm_2d_otsu_labeled_"
+            r"(?P<bandwidth>wide|narrow)_(?P<shape>.+)_shape_"
+            r"(?P<direction>counter_clockwise|clockwise)"
+            r"_s(?P<subject>\d+)\.csv$"),
+        gaze_name=("tobii_chen_var_adm_2d_otsu_labeled_{bandwidth}_{shape}"
+                   "_shape_{direction}_s{subject}.csv"),
+        calibration_name=("tobii_coppelia_reference_calibration_{bandwidth}"
+                          "_{shape}_shape_{direction}_s{subject}.json"),
+        condition_fields=("bandwidth", "shape", "direction"),
+    ),
+}
+
+
+def parse_condition_value(text: str):
+    """Keep digit-only filename fields numeric (e.g. damping 100)."""
+    return int(text) if text.isdigit() else text
+
+
+def describe_trial(trial: dict) -> str:
+    """One-line trial identity for progress printing."""
+    condition_text = " ".join(
+        str(value) for value in trial["condition"].values())
+    return f"{condition_text} s{trial['subject']}"
 
 
 def discover_trials() -> list:
+    dataset = DATASET_REGISTRY[dataset_name]
+    robot_directory = dataset["robot_directory"]
     trials = []
     for robot_csv_file in sorted(
-            RAW_DATA_DIRECTORY.glob("ur5e_fixed_adm_2d_labeled_*.csv")):
-        match = TRIAL_FILENAME_PATTERN.match(robot_csv_file.name)
+            robot_directory.glob(dataset["robot_glob"])):
+        if robot_csv_file.stem in excluded_trial_stems:
+            print(f"Skipping {robot_csv_file.name}: in excluded_trial_stems.")
+            continue
+        match = dataset["robot_pattern"].match(robot_csv_file.name)
         if not match:
             print(f"Skipping {robot_csv_file.name}: unexpected filename.")
             continue
-        shape = match["shape"]
-        damping_n_s_m = int(match["damping"])
-        subject = int(match["subject"])
+        name_fields = {key: parse_condition_value(value)
+                       for key, value in match.groupdict().items()}
+        subject = int(name_fields.pop("subject"))
+        condition = {field: name_fields[field]
+                     for field in dataset["condition_fields"]}
 
-        gaze_csv_file = RAW_DATA_DIRECTORY / (
-            f"tobii_fixed_adm_2d_labeled_{shape}_d{damping_n_s_m}"
-            f"_s{subject}.csv")
-        calibration_json_file = CALIBRATION_DIRECTORY / (
-            f"tobii_coppelia_reference_calibration_{shape}_s{subject}.json")
+        gaze_csv_file = robot_directory / dataset["gaze_name"].format(
+            subject=subject, **name_fields)
+        calibration_json_file = (
+            CALIBRATION_DIRECTORY / dataset["calibration_name"].format(
+                subject=subject, **name_fields))
 
         if not gaze_csv_file.is_file():
             print(f"Skipping {robot_csv_file.name}: no matching gaze CSV "
@@ -138,8 +251,8 @@ def discover_trials() -> list:
 
         trials.append(dict(
             robot_csv_file=robot_csv_file, gaze_csv_file=gaze_csv_file,
-            calibration_json_file=calibration_json_file, shape=shape,
-            damping_n_s_m=damping_n_s_m, subject=subject))
+            calibration_json_file=calibration_json_file,
+            condition=condition, subject=subject))
     return trials
 
 
@@ -153,6 +266,15 @@ def discover_trials() -> list:
 
 def get_numeric_column(series: pd.Series) -> np.ndarray:
     return pd.to_numeric(series, errors="coerce").to_numpy(dtype=float)
+
+
+def optional_numeric_column(
+        table: pd.DataFrame, column_name: str,
+        fill_value: float = 0.0) -> np.ndarray:
+    """get_numeric_column, but fill_value if the column is absent."""
+    if column_name not in table.columns:
+        return np.full(len(table), fill_value, dtype=float)
+    return get_numeric_column(table[column_name])
 
 
 def parse_vector_cell(cell, size: int) -> np.ndarray:
@@ -203,9 +325,13 @@ def load_calibrated_streams(
     Fy_all = get_numeric_column(robot_table["Fy_filt_N"])
     Vcx_all = get_numeric_column(robot_table["vx_cmd_m_s"])
     Vcy_all = get_numeric_column(robot_table["vy_cmd_m_s"])
-    wx_all = get_numeric_column(robot_table["tcp_wx_actual_rad_s"])
-    wy_all = get_numeric_column(robot_table["tcp_wy_actual_rad_s"])
-    wz_all = get_numeric_column(robot_table["tcp_wz_actual_rad_s"])
+    # ur5e_chen_var_adm_2d.py does not log TCP angular velocity, so
+    # these three are optional: absent, Wmag is zero and only the 3
+    # robot-bank features built on it go flat (the gaze bank never
+    # touches it).
+    wx_all = optional_numeric_column(robot_table, "tcp_wx_actual_rad_s")
+    wy_all = optional_numeric_column(robot_table, "tcp_wy_actual_rad_s")
+    wz_all = optional_numeric_column(robot_table, "tcp_wz_actual_rad_s")
     Wmag_all = np.sqrt(wx_all ** 2 + wy_all ** 2 + wz_all ** 2)
 
     robot_valid = np.isfinite(robot_time_s) & np.isfinite(Px_all) & \
@@ -320,7 +446,7 @@ def compute_robot_sample_is_clean(
 # see module docstring for why).
 # ======================================================================
 
-def build_windows(streams: dict, trial: dict) -> dict:
+def build_windows(streams: dict, trial: dict, modalities) -> dict:
     robot_time_s = streams["robot_time_s"]
     robot_label = streams["robot_label"]
     Px_all, Py_all = streams["Px_all"], streams["Py_all"]
@@ -339,9 +465,8 @@ def build_windows(streams: dict, trial: dict) -> dict:
     analysis_end_s = min(Gt_all.max(), robot_time_s.max()) - edge_trim_s
     if analysis_end_s - analysis_start_s < window_size_s:
         print(f"  SKIPPING trial (too short after edge_trim_s): "
-              f"{trial['shape']} d{trial['damping_n_s_m']} "
-              f"s{trial['subject']}")
-        return {"robot": [], "gaze": [], "joint": []}
+              f"{describe_trial(trial)}")
+        return {modality: [] for modality in modalities}
 
     window_starts = np.arange(
         analysis_start_s, analysis_end_s - window_size_s, window_step_s)
@@ -353,11 +478,18 @@ def build_windows(streams: dict, trial: dict) -> dict:
         high_speed_threshold_m_s=high_speed_threshold_m_s,
         close_thresholds_m=close_thresholds_m,
     )
-    robot_bank = cfb.build_robot_feature_bank(config)
-    gaze_bank = cfb.build_gaze_feature_bank(config)
-    joint_bank = cfb.build_joint_feature_bank(config)
+    # Only the requested modalities' banks are built, but the window
+    # validity gates below still require BOTH gaze and robot data, so a
+    # gaze-only run evaluates the exact same windows a three-modality
+    # run would -- see the module docstring.
+    robot_bank = (cfb.build_robot_feature_bank(config)
+                  if "robot" in modalities else [])
+    gaze_bank = (cfb.build_gaze_feature_bank(config)
+                 if "gaze" in modalities else [])
+    joint_bank = (cfb.build_joint_feature_bank(config)
+                  if "joint" in modalities else [])
 
-    rows = {"robot": [], "gaze": [], "joint": []}
+    rows = {modality: [] for modality in modalities}
     excluded_too_few_samples = 0
     excluded_label = 0
     for window_idx, window_start_s in enumerate(window_starts):
@@ -408,8 +540,7 @@ def build_windows(streams: dict, trial: dict) -> dict:
 
         metadata = {
             "subject": trial["subject"],
-            "shape": trial["shape"],
-            "damping_n_s_m": trial["damping_n_s_m"],
+            **trial["condition"],
             "window_index": window_idx,
             "window_start_s": window_start_s,
             "window_end_s": window_end_s,
@@ -419,31 +550,34 @@ def build_windows(streams: dict, trial: dict) -> dict:
             "trial_class_label": window_label,
         }
 
-        robot_row = dict(metadata)
-        for name, feature_fn in robot_bank:
-            robot_row[name] = feature_fn(
-                Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy)
-        robot_row["DSJ"] = cfb.calculate_planar_dsj(
-            robot_x_m[robot_in_window], robot_y_m[robot_in_window], Pt)
-        robot_row["mean_ee_speed_m_s"] = cfb.calculate_mean_planar_speed(
-            Px, Py, Pt)
-        rows["robot"].append(robot_row)
+        if "robot" in modalities:
+            robot_row = dict(metadata)
+            for name, feature_fn in robot_bank:
+                robot_row[name] = feature_fn(
+                    Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy)
+            robot_row["DSJ"] = cfb.calculate_planar_dsj(
+                robot_x_m[robot_in_window], robot_y_m[robot_in_window], Pt)
+            robot_row["mean_ee_speed_m_s"] = cfb.calculate_mean_planar_speed(
+                Px, Py, Pt)
+            rows["robot"].append(robot_row)
 
-        gaze_row = dict(metadata)
-        for name, feature_fn in gaze_bank:
-            gaze_row[name] = feature_fn(Gx, Gy, Gt, Px, Py, Pt)
-        rows["gaze"].append(gaze_row)
+        if "gaze" in modalities:
+            gaze_row = dict(metadata)
+            for name, feature_fn in gaze_bank:
+                gaze_row[name] = feature_fn(Gx, Gy, Gt, Px, Py, Pt)
+            rows["gaze"].append(gaze_row)
 
-        joint_row = dict(metadata)
-        for name, feature_fn in joint_bank:
-            joint_row[name] = feature_fn(
-                Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy)
-        rows["joint"].append(joint_row)
+        if "joint" in modalities:
+            joint_row = dict(metadata)
+            for name, feature_fn in joint_bank:
+                joint_row[name] = feature_fn(
+                    Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy)
+            rows["joint"].append(joint_row)
 
+    kept_count = len(rows[modalities[0]])
     print(
-        f"  {trial['shape']:<8} d{trial['damping_n_s_m']:<3} "
-        f"s{trial['subject']}: {len(window_starts)} candidates, "
-        f"{len(rows['robot'])} kept, {excluded_too_few_samples} "
+        f"  {describe_trial(trial):<38}: {len(window_starts)} candidates, "
+        f"{kept_count} kept, {excluded_too_few_samples} "
         f"too-few-samples, {excluded_label} label/transition")
 
     return {name: pd.DataFrame(r) for name, r in rows.items()}
@@ -456,8 +590,14 @@ def build_windows(streams: dict, trial: dict) -> dict:
 # ======================================================================
 
 def split_train_test_balanced(feature_tables: dict) -> dict:
-    key_columns = ["subject", "shape", "damping_n_s_m", "window_index"]
-    key_table = feature_tables["robot"][key_columns + ["trial_class_label"]]
+    condition_fields = list(
+        DATASET_REGISTRY[dataset_name]["condition_fields"])
+    key_columns = ["subject"] + condition_fields + ["window_index"]
+    # Any built modality works as the key table: all of them carry the
+    # same windows in the same order, by construction above.
+    reference_modality = modalities_to_build[0]
+    key_table = feature_tables[reference_modality][
+        key_columns + ["trial_class_label"]]
 
     class_counts = key_table["trial_class_label"].value_counts()
     smallest_class_count = int(class_counts.min())
@@ -509,27 +649,112 @@ def split_train_test_balanced(feature_tables: dict) -> dict:
     return split_tables
 
 
+# ======================================================================
+# Per-trial feature cache. Building all trials takes ~30 s each, so an
+# interrupted run used to lose everything; each trial's window table is
+# now written as it is computed and reloaded on the next run. The cache
+# directory name carries a hash of every setting that changes feature
+# VALUES, so editing e.g. transition_margin_s starts a fresh cache
+# instead of silently mixing old and new windows.
+# ======================================================================
+
+def cache_fingerprint() -> str:
+    # modalities_to_build is deliberately NOT part of the key: each
+    # modality is cached in its own file and its feature VALUES do not
+    # depend on which other banks were requested, so adding a modality
+    # must not invalidate the ones already computed.
+    settings_text = repr((
+        dataset_name,
+        window_size_s, window_step_s,
+        minimum_gaze_samples, minimum_robot_samples,
+        transition_margin_s, edge_trim_s, valid_class_labels,
+        screen_motion_per_robot_motion, tobii_to_coppelia_axis_sign,
+        require_gaze_on_display, require_both_eyes_valid,
+        workspace_half_extent_m, low_speed_threshold_m_s,
+        high_speed_threshold_m_s, close_thresholds_m,
+    ))
+    return hashlib.sha1(settings_text.encode()).hexdigest()[:12]
+
+
+def trial_cache_directory() -> Path:
+    return (PROCESSED_DATA_DIRECTORY / "feature_cache" /
+            f"{dataset_name}_{cache_fingerprint()}")
+
+
+def cached_trial_path(
+        cache_directory: Path, trial: dict, modality: str) -> Path:
+    return cache_directory / f"{trial['robot_csv_file'].stem}_{modality}.csv"
+
+
+def read_cached_trial(cache_directory: Path, trial: dict) -> dict:
+    """Whichever requested modalities are already cached (may be empty),
+    so only the missing ones have to be recomputed."""
+    if not use_trial_cache:
+        return {}
+    cached = {}
+    for modality in modalities_to_build:
+        path = cached_trial_path(cache_directory, trial, modality)
+        if path.is_file():
+            cached[modality] = pd.read_csv(path, keep_default_na=False)
+    return cached
+
+
+def write_cached_trial(
+        cache_directory: Path, trial: dict, windows: dict) -> None:
+    if not use_trial_cache:
+        return
+    for modality, table in windows.items():
+        table.to_csv(
+            cached_trial_path(cache_directory, trial, modality), index=False)
+
+
 def main() -> None:
+    print(f"Dataset: {dataset_name}   modalities: "
+          f"{', '.join(modalities_to_build)}\n")
     trials = discover_trials()
     print(f"Discovered {len(trials)} trials.\n")
+    if not trials:
+        raise SystemExit(
+            f"No trials found for dataset_name='{dataset_name}' under "
+            f"{DATASET_REGISTRY[dataset_name]['robot_directory']}.")
 
-    trial_tables = {"robot": [], "gaze": [], "joint": []}
-    for trial in trials:
-        streams = load_calibrated_streams(
-            trial["robot_csv_file"], trial["gaze_csv_file"],
-            trial["calibration_json_file"])
-        windows = build_windows(streams, trial)
+    cache_directory = trial_cache_directory()
+    if use_trial_cache:
+        cache_directory.mkdir(parents=True, exist_ok=True)
+        print(f"Trial cache: {cache_directory}\n")
+
+    trial_tables = {modality: [] for modality in modalities_to_build}
+    for trial_idx, trial in enumerate(trials, start=1):
+        cached = read_cached_trial(cache_directory, trial)
+        missing = [m for m in modalities_to_build if m not in cached]
+
+        if missing:
+            streams = load_calibrated_streams(
+                trial["robot_csv_file"], trial["gaze_csv_file"],
+                trial["calibration_json_file"])
+            computed = build_windows(streams, trial, missing)
+            write_cached_trial(cache_directory, trial, computed)
+            cached.update(computed)
+            print(f"  [{trial_idx}/{len(trials)}] "
+                  f"{describe_trial(trial):<38}: computed "
+                  f"{'+'.join(missing)}")
+        else:
+            print(f"  [{trial_idx}/{len(trials)}] "
+                  f"{describe_trial(trial):<38}: fully cached "
+                  f"({len(cached[modalities_to_build[0]])} windows)")
+
         for modality in trial_tables:
-            trial_tables[modality].append(windows[modality])
+            trial_tables[modality].append(cached[modality])
 
     feature_tables = {
         modality: pd.concat(tables, ignore_index=True)
         for modality, tables in trial_tables.items()
     }
-    pooled_window_count = len(feature_tables["robot"])
+    reference_modality = modalities_to_build[0]
+    pooled_window_count = len(feature_tables[reference_modality])
     print(f"\nPooled: {pooled_window_count} windows across "
           f"{len(trials)} trials.")
-    print(feature_tables["robot"]["trial_class_label"]
+    print(feature_tables[reference_modality]["trial_class_label"]
           .value_counts().to_string())
 
     split_tables = split_train_test_balanced(feature_tables)

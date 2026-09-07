@@ -31,7 +31,7 @@ processed_data_directory = fullfile(script_directory, '..', 'data', 'processed_d
 
 %% User Settings
 
-save_labeled_csv = true;  % write per-trial Otsu-labeled CSVs to processed_data/
+save_labeled_csv = false;  % write per-trial Otsu-labeled CSVs to processed_data/
 plot_only_on_display_gaze = false;
 
 shape_tokens = ["pear", "fine_gross", "ellipse"];

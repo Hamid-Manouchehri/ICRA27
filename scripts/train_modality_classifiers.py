@@ -61,29 +61,42 @@ PROCESSED_DATA_DIRECTORY = DATA_DIRECTORY / "processed_data"
 IMAGE_DATA_DIRECTORY = DATA_DIRECTORY / "images"
 
 # -------------------- User Settings --------------------
+# TODO which modalities to train/evaluate. Must be a subset of what
+# build_modality_feature_datasets.py's modalities_to_build actually
+# wrote. Every script importing this module iterates
+# modality_csv_paths, so this one setting drives them all (LOSO, top_n,
+# tuning). See that script's CIRCULARITY WARNING before adding robot or
+# joint on an Otsu-labeled dataset.
+modalities_to_train = ("gaze",)
+
+# TODO which dataset's feature CSVs to read. Must match
+# build_modality_feature_datasets.py's dataset_name, which writes the
+# suffix these paths expect ("chen_otsu" or "fixed_pilot").
+dataset_name = "chen_otsu"
+
 # TODO input feature CSVs per modality, as written by
 # build_modality_feature_datasets.py.
+all_modality_csv_paths = {
+    modality: {
+        split: PROCESSED_DATA_DIRECTORY /
+               f"features_{modality}_{split}_{dataset_name}.csv"
+        for split in ("train", "test")
+    }
+    for modality in ("robot", "gaze", "joint")
+}
 modality_csv_paths = {
-    "robot": {
-        "train": PROCESSED_DATA_DIRECTORY / "features_robot_train.csv",
-        "test": PROCESSED_DATA_DIRECTORY / "features_robot_test.csv",
-    },
-    "gaze": {
-        "train": PROCESSED_DATA_DIRECTORY / "features_gaze_train.csv",
-        "test": PROCESSED_DATA_DIRECTORY / "features_gaze_test.csv",
-    },
-    "joint": {
-        "train": PROCESSED_DATA_DIRECTORY / "features_joint_train.csv",
-        "test": PROCESSED_DATA_DIRECTORY / "features_joint_test.csv",
-    },
+    modality: all_modality_csv_paths[modality]
+    for modality in modalities_to_train
 }
 
 # TODO metadata columns to exclude from every modality's feature matrix
-# (kept only for reference). subject/shape/damping_n_s_m describe the
-# recording CONDITION, not behaviour, so are excluded on purpose even
-# though damping_n_s_m is numeric.
+# (kept only for reference). subject and the condition fields
+# (shape/damping_n_s_m for the pilot dataset, bandwidth/shape/direction
+# for chen_otsu) describe the recording CONDITION, not behaviour, so
+# are excluded on purpose even though damping_n_s_m is numeric. Listing
+# a column a given dataset does not have is harmless.
 metadata_columns = [
-    "subject", "shape", "damping_n_s_m",
+    "subject", "shape", "damping_n_s_m", "bandwidth", "direction",
     "window_index", "window_start_s", "window_end_s", "window_center_s",
     "gaze_sample_count", "robot_sample_count",
 ]
@@ -93,7 +106,10 @@ target_column = "trial_class_label"
 # this one line to switch models, or add another entry to
 # CLASSIFIER_REGISTRY below for anything not already listed.
 classifier_name = "random_forest"
-classifier_kwargs = {"n_estimators": 300, "random_state": 42}
+# n_jobs=-1: parallelizes tree-building across all cores, same trees/
+# result either way. Drop it if classifier_name -> "svm" -- SVC has no
+# n_jobs and build_classifier() passes kwargs through unfiltered.
+classifier_kwargs = {"n_estimators": 300, "random_state": 42, "n_jobs": -1}
 
 # TODO how many top-ranked features to show in each modality's
 # importance bar chart.
@@ -192,11 +208,14 @@ def train_and_evaluate_modality(modality: str) -> dict:
         y_test, y_predicted, labels=class_order, ax=ax, colorbar=True)
     ax.set_title(f"Confusion matrix -- {classifier_name} ({modality})")
     fig.tight_layout()
-    fig.savefig(IMAGE_DATA_DIRECTORY / f"confusion_matrix_{modality}.png", dpi=150)
+    fig.savefig(
+        IMAGE_DATA_DIRECTORY /
+        f"confusion_matrix_{modality}_{dataset_name}.png", dpi=150)
     plt.close(fig)
 
     pd.DataFrame({"y_test": y_test, "y_predicted": y_predicted}).to_csv(
-        PROCESSED_DATA_DIRECTORY / f"predictions_{modality}.csv", index=False)
+        PROCESSED_DATA_DIRECTORY /
+        f"predictions_{modality}_{dataset_name}.csv", index=False)
 
     # --- Save the fitted model, bundled with the exact feature_columns
     # list/order it expects -- a bare model has no memory of column
@@ -205,7 +224,7 @@ def train_and_evaluate_modality(modality: str) -> dict:
     joblib.dump(
         {"model": model, "feature_columns": feature_columns,
          "classifier_name": classifier_name, "modality": modality},
-        PROCESSED_DATA_DIRECTORY / f"model_{modality}.joblib")
+        PROCESSED_DATA_DIRECTORY / f"model_{modality}_{dataset_name}.joblib")
 
     # --- Feature ranking: always a random forest, matching KD_test/
     # python/train_classifier.py's own reasoning -- reuses the already-
@@ -223,7 +242,8 @@ def train_and_evaluate_modality(modality: str) -> dict:
     }).sort_values("importance", ascending=False).reset_index(drop=True)
     ranking_table.insert(0, "rank", np.arange(1, len(ranking_table) + 1))
     ranking_table.to_csv(
-        PROCESSED_DATA_DIRECTORY / f"feature_importance_ranking_{modality}.csv",
+        PROCESSED_DATA_DIRECTORY /
+        f"feature_importance_ranking_{modality}_{dataset_name}.csv",
         index=False)
     print(f"Top 5 {modality} features by importance:")
     print(ranking_table.head(5).to_string(index=False))
@@ -235,7 +255,8 @@ def train_and_evaluate_modality(modality: str) -> dict:
     ax.set_title(f"Top {len(top_features)} {modality} features")
     fig.tight_layout()
     fig.savefig(
-        IMAGE_DATA_DIRECTORY / f"feature_importance_{modality}.png", dpi=150)
+        IMAGE_DATA_DIRECTORY /
+        f"feature_importance_{modality}_{dataset_name}.png", dpi=150)
     plt.close(fig)
 
     return flatten_classification_report(modality, report_dict, class_order)
@@ -245,10 +266,11 @@ def main() -> None:
     rows = [train_and_evaluate_modality(modality)
             for modality in modality_csv_paths]
     metrics_table = pd.DataFrame(rows)
-    metrics_table.to_csv(
-        PROCESSED_DATA_DIRECTORY / "metrics_by_modality.csv", index=False)
+    metrics_path = (PROCESSED_DATA_DIRECTORY /
+                    f"metrics_by_modality_{dataset_name}.csv")
+    metrics_table.to_csv(metrics_path, index=False)
 
-    print(f"\n{'=' * 70}\nSummary (also written to metrics_by_modality.csv)"
+    print(f"\n{'=' * 70}\nSummary (also written to {metrics_path.name})"
           f"\n{'=' * 70}")
     print(metrics_table.to_string(index=False))
 
