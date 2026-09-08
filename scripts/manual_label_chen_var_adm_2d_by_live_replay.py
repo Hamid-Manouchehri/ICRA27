@@ -88,18 +88,18 @@ PROCESSED_DATA_DIRECTORY = DATA_DIRECTORY / "processed_data"
 # TODO the ur5e CSV filename to label, exactly as it appears in
 # data/raw_data/ -- the matching tobii_* CSV is derived automatically
 # (same trial token, standard naming).
-# robot_csv_filename = "ur5e_chen_var_adm_2d_narrow_ellipse_shape_clockwise_s18.csv"  # 1
-# robot_csv_filename = "ur5e_chen_var_adm_2d_wide_ellipse_shape_clockwise_s18.csv"  # 2
-# robot_csv_filename = "ur5e_chen_var_adm_2d_narrow_ellipse_shape_counter_clockwise_s18.csv"  # 3
-# robot_csv_filename = "ur5e_chen_var_adm_2d_wide_ellipse_shape_counter_clockwise_s18.csv"  # 4 
-# robot_csv_filename = "ur5e_chen_var_adm_2d_narrow_fine_gross_shape_clockwise_s18.csv"  # 5
-# robot_csv_filename = "ur5e_chen_var_adm_2d_wide_fine_gross_shape_clockwise_s18.csv"  # 6
-# robot_csv_filename = "ur5e_chen_var_adm_2d_narrow_fine_gross_shape_counter_clockwise_s18.csv"  # 7
-# robot_csv_filename = "ur5e_chen_var_adm_2d_wide_fine_gross_shape_counter_clockwise_s18.csv"  # 8
-# robot_csv_filename = "ur5e_chen_var_adm_2d_narrow_pear_shape_clockwise_s18.csv"  # 9
-# robot_csv_filename = "ur5e_chen_var_adm_2d_wide_pear_shape_clockwise_s18.csv"  # 10
-# robot_csv_filename = "ur5e_chen_var_adm_2d_narrow_pear_shape_counter_clockwise_s18.csv"  # 11
-robot_csv_filename = "ur5e_chen_var_adm_2d_wide_pear_shape_counter_clockwise_s18.csv"  # 12
+# robot_csv_filename = "ur5e_chen_var_adm_2d_narrow_ellipse_shape_clockwise_s1.csv"  # 1
+# robot_csv_filename = "ur5e_chen_var_adm_2d_wide_ellipse_shape_clockwise_s1.csv"  # 2
+# robot_csv_filename = "ur5e_chen_var_adm_2d_narrow_ellipse_shape_counter_clockwise_s1.csv"  # 3
+# robot_csv_filename = "ur5e_chen_var_adm_2d_wide_ellipse_shape_counter_clockwise_s1.csv"  # 4 
+# robot_csv_filename = "ur5e_chen_var_adm_2d_narrow_fine_gross_shape_clockwise_s1.csv"  # 5
+# robot_csv_filename = "ur5e_chen_var_adm_2d_wide_fine_gross_shape_clockwise_s1.csv"  # 6
+# robot_csv_filename = "ur5e_chen_var_adm_2d_narrow_fine_gross_shape_counter_clockwise_s1.csv"  # 7
+# robot_csv_filename = "ur5e_chen_var_adm_2d_wide_fine_gross_shape_counter_clockwise_s1.csv"  # 8
+# robot_csv_filename = "ur5e_chen_var_adm_2d_narrow_pear_shape_clockwise_s1.csv"  # 9
+# robot_csv_filename = "ur5e_chen_var_adm_2d_wide_pear_shape_clockwise_s1.csv"  # 10
+# robot_csv_filename = "ur5e_chen_var_adm_2d_narrow_pear_shape_counter_clockwise_s1.csv"  # 11
+# robot_csv_filename = "ur5e_chen_var_adm_2d_wide_pear_shape_counter_clockwise_s1.csv"  # 12
 
 overwrite_existing = True  # TODO refuse to run if the output CSV exists
 
@@ -276,15 +276,33 @@ def main() -> None:
     fig, path_axes = plt.subplots(figsize=(7, 7))
     fig.canvas.manager.set_window_title(f"Label: {trial_token}")
 
-    fine_line, = path_axes.plot([], [], ".", color=fine_color,
-                                 markersize=tcp_marker_size, label=fine_label_text)
-    gross_line, = path_axes.plot([], [], ".", color=gross_color,
-                                  markersize=tcp_marker_size, label=gross_label_text)
-    none_line, = path_axes.plot([], [], ".", color=none_color,
-                                 markersize=tcp_marker_size, label=none_label_text)
+    # Lines, not '.' markers: matplotlib's path.simplify (on by default)
+    # collapses near-collinear points before rasterizing a LINE, but
+    # gets no such benefit for individually-drawn markers -- measured
+    # ~2x less per-frame growth over a 60k-sample trial from this
+    # alone. Combined with the append-only growth below (see the loop),
+    # this is what actually fixes the "starts fast, ends slow" replay.
+    fine_line, = path_axes.plot([], [], "-", color=fine_color,
+                                 linewidth=2.0, label=fine_label_text)
+    gross_line, = path_axes.plot([], [], "-", color=gross_color,
+                                  linewidth=2.0, label=gross_label_text)
+    none_line, = path_axes.plot([], [], "-", color=none_color,
+                                 linewidth=2.0, label=none_label_text)
     current_marker, = path_axes.plot(
         [], [], "o", markersize=tcp_marker_size + 6,
         markerfacecolor=none_color, markeredgecolor="k")
+
+    # Growing per-class point lists, appended to (never re-sliced from
+    # sample 0) -- see the main loop for why. A NaN is inserted when a
+    # class's trail RESUMES after a gap (some other class was active in
+    # between), so matplotlib draws a break instead of a spurious
+    # straight line connecting two disjoint stretches of the same class.
+    class_trails = {
+        fine_label_text: ([], [], fine_line),
+        gross_label_text: ([], [], gross_line),
+        none_label_text: ([], [], none_line),
+    }
+    previous_chunk_label = None
     path_axes.set_xlim(coppeliasim_x_m.min() - 0.02, coppeliasim_x_m.max() + 0.02)
     path_axes.set_ylim(coppeliasim_y_m.min() - 0.02, coppeliasim_y_m.max() + 0.02)
     path_axes.set_aspect("equal")
@@ -371,19 +389,20 @@ def main() -> None:
             chunk_end_idx = min(sample_idx + animation_stride, sample_count) - 1
             robot_label[sample_idx:chunk_end_idx + 1] = label
 
-            shown_x = coppeliasim_x_m[:chunk_end_idx + 1]
-            shown_y = coppeliasim_y_m[:chunk_end_idx + 1]
-            shown_label = robot_label[:chunk_end_idx + 1]
-
-            fine_line.set_data(
-                np.where(shown_label == fine_label_text, shown_x, np.nan),
-                np.where(shown_label == fine_label_text, shown_y, np.nan))
-            gross_line.set_data(
-                np.where(shown_label == gross_label_text, shown_x, np.nan),
-                np.where(shown_label == gross_label_text, shown_y, np.nan))
-            none_line.set_data(
-                np.where(shown_label == none_label_text, shown_x, np.nan),
-                np.where(shown_label == none_label_text, shown_y, np.nan))
+            # Append only THIS chunk's points to the active class's trail
+            # (every sample in a chunk shares one label -- see the
+            # assignment just above) -- O(animation_stride) per frame,
+            # not O(samples seen so far). A NaN break is inserted first
+            # if this class is being RESUMED after another class was
+            # active in between, so the line doesn't jump across the gap.
+            points_x, points_y, active_line = class_trails[label]
+            if label != previous_chunk_label and points_x:
+                points_x.append(np.nan)
+                points_y.append(np.nan)
+            points_x.extend(coppeliasim_x_m[sample_idx:chunk_end_idx + 1])
+            points_y.extend(coppeliasim_y_m[sample_idx:chunk_end_idx + 1])
+            active_line.set_data(points_x, points_y)
+            previous_chunk_label = label
 
             current_color = {fine_label_text: fine_color,
                               gross_label_text: gross_color,

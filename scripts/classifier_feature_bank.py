@@ -127,46 +127,91 @@ class FeatureConfig:
 # ======================================================================
 
 def finite_values(values) -> np.ndarray:
+    """Flatten and drop non-finite entries.
+
+    Input: any array-like.
+    Output: 1D array of only the finite values.
+    """
     values = np.asarray(values, dtype=float).ravel()
     return values[np.isfinite(values)]
 
 
 def safe_mean(values) -> float:
+    """Arithmetic mean of the finite entries: mean = (1/n) * sum(x_i).
+
+    Input: array-like.
+    Output: float, NaN if empty.
+    """
     values = finite_values(values)
     return float(np.mean(values)) if values.size else np.nan
 
 
 def safe_std(values) -> float:
+    """Sample standard deviation (ddof=1): sqrt(sum((x_i - mean)^2) / (n-1)).
+
+    Input: array-like.
+    Output: float, NaN if fewer than 2 finite values.
+    """
     values = finite_values(values)
     return float(np.std(values, ddof=1)) if values.size >= 2 else np.nan
 
 
 def safe_variance(values) -> float:
+    """Sample variance, i.e. safe_std(values) ** 2.
+
+    Input: array-like.
+    Output: float, NaN if undefined.
+    """
     std = safe_std(values)
     return std ** 2 if np.isfinite(std) else np.nan
 
 
 def safe_minimum(values) -> float:
+    """Minimum of the finite entries.
+
+    Input: array-like.
+    Output: float, NaN if empty.
+    """
     values = finite_values(values)
     return float(np.min(values)) if values.size else np.nan
 
 
 def safe_maximum(values) -> float:
+    """Maximum of the finite entries.
+
+    Input: array-like.
+    Output: float, NaN if empty.
+    """
     values = finite_values(values)
     return float(np.max(values)) if values.size else np.nan
 
 
 def safe_range(values) -> float:
+    """Range: max - min of the finite entries.
+
+    Input: array-like.
+    Output: float, NaN if empty.
+    """
     lo, hi = safe_minimum(values), safe_maximum(values)
     return hi - lo if np.isfinite(lo) and np.isfinite(hi) else np.nan
 
 
 def safe_median(values) -> float:
+    """Median of the finite entries.
+
+    Input: array-like.
+    Output: float, NaN if empty.
+    """
     values = finite_values(values)
     return float(np.median(values)) if values.size else np.nan
 
 
 def percentile_value(values, percentile: float) -> float:
+    """The given percentile (linear interpolation) of the finite entries.
+
+    Input: array-like values, percentile in [0, 100].
+    Output: float, NaN if empty.
+    """
     values = finite_values(values)
     if values.size == 0:
         return np.nan
@@ -177,10 +222,20 @@ def percentile_value(values, percentile: float) -> float:
 
 
 def safe_interquartile_range(values) -> float:
+    """Interquartile range: the 75th percentile minus the 25th.
+
+    Input: array-like.
+    Output: float.
+    """
     return percentile_value(values, 75.0) - percentile_value(values, 25.0)
 
 
 def safe_median_absolute_deviation(values) -> float:
+    """Median absolute deviation: median(|x_i - median(x)|).
+
+    Input: array-like.
+    Output: float, NaN if empty.
+    """
     values = finite_values(values)
     if values.size == 0:
         return np.nan
@@ -188,6 +243,12 @@ def safe_median_absolute_deviation(values) -> float:
 
 
 def safe_skewness(values) -> float:
+    """Population (Fisher) skewness: mean(centered^3) / mean(centered^2)^1.5,
+    centered = x - mean(x).
+
+    Input: array-like.
+    Output: float, NaN if fewer than 3 finite values or zero variance.
+    """
     values = finite_values(values)
     if values.size < 3:
         return np.nan
@@ -199,6 +260,11 @@ def safe_skewness(values) -> float:
 
 
 def safe_kurtosis(values) -> float:
+    """Population kurtosis (not excess): mean(centered^4) / mean(centered^2)^2.
+
+    Input: array-like.
+    Output: float, NaN if fewer than 4 finite values or zero variance.
+    """
     values = finite_values(values)
     if values.size < 4:
         return np.nan
@@ -210,6 +276,12 @@ def safe_kurtosis(values) -> float:
 
 
 def safe_covariance(first_values, second_values) -> float:
+    """Sample covariance (ddof=1) between two paired series, dropping any row
+    where either value is non-finite.
+
+    Input: two array-likes, same length.
+    Output: float, NaN if fewer than 2 paired finite values.
+    """
     first_values = np.asarray(first_values, dtype=float).ravel()
     second_values = np.asarray(second_values, dtype=float).ravel()
     valid = np.isfinite(first_values) & np.isfinite(second_values)
@@ -220,6 +292,16 @@ def safe_covariance(first_values, second_values) -> float:
 
 
 def pearson_correlation(first_values, second_values) -> float:
+    """Pearson correlation coefficient:
+
+        r = sum(dx_i * dy_i) / sqrt(sum(dx_i^2) * sum(dy_i^2))
+
+    dx/dy are each series centered on its own mean.
+
+    Input: two array-likes, same length.
+    Output: float in [-1, 1], NaN if fewer than 3 paired finite values or
+    zero variance in either series.
+    """
     first_values = np.asarray(first_values, dtype=float).ravel()
     second_values = np.asarray(second_values, dtype=float).ravel()
     valid = np.isfinite(first_values) & np.isfinite(second_values)
@@ -236,11 +318,21 @@ def pearson_correlation(first_values, second_values) -> float:
 
 
 def safe_root_mean_square(values) -> float:
+    """Root mean square: sqrt(mean(x_i^2)) over the finite entries.
+
+    Input: array-like.
+    Output: float, NaN if empty.
+    """
     values = finite_values(values)
     return float(np.sqrt(np.mean(values ** 2))) if values.size else np.nan
 
 
 def safe_ratio(numerator: float, denominator: float) -> float:
+    """numerator / denominator, guarded against division by ~zero.
+
+    Input: two floats.
+    Output: float, NaN if either input is non-finite or |denominator| <= 1e-12.
+    """
     if not np.isfinite(numerator) or not np.isfinite(denominator) or \
             abs(denominator) <= 1e-12:
         return np.nan
@@ -335,6 +427,12 @@ def calculate_planar_motion(x, y, time_s) -> dict:
 
 
 def planar_path_length(x, y) -> float:
+    """Total path length: sum of consecutive-sample steps,
+    sum(hypot(diff(x), diff(y))).
+
+    Input: x, y position arrays.
+    Output: float [same units as x/y], NaN if fewer than 2 finite paired samples.
+    """
     x = np.asarray(x, dtype=float).ravel()
     y = np.asarray(y, dtype=float).ravel()
     valid = np.isfinite(x) & np.isfinite(y)
@@ -345,6 +443,12 @@ def planar_path_length(x, y) -> float:
 
 
 def planar_net_displacement(x, y) -> float:
+    """Straight-line distance from the first to the last sample:
+    hypot(x[-1] - x[0], y[-1] - y[0]).
+
+    Input: x, y position arrays.
+    Output: float, NaN if fewer than 2 finite paired samples.
+    """
     x = np.asarray(x, dtype=float).ravel()
     y = np.asarray(y, dtype=float).ravel()
     valid = np.isfinite(x) & np.isfinite(y)
@@ -355,6 +459,12 @@ def planar_net_displacement(x, y) -> float:
 
 
 def circular_mean(angles_rad) -> float:
+    """Mean direction of a set of angles, via the resultant vector:
+    atan2(mean(sin(theta)), mean(cos(theta))).
+
+    Input: angles [rad].
+    Output: float [rad] in (-pi, pi], NaN if empty.
+    """
     angles_rad = finite_values(angles_rad)
     if angles_rad.size == 0:
         return np.nan
@@ -363,6 +473,16 @@ def circular_mean(angles_rad) -> float:
 
 
 def circular_concentration(angles_rad) -> float:
+    """Concentration of a set of angles around their mean direction (the
+    resultant vector's length):
+
+        R = hypot(mean(cos(theta)), mean(sin(theta)))
+
+    R = 1 means all angles identical, R = 0 means uniformly spread.
+
+    Input: angles [rad].
+    Output: float in [0, 1], NaN if empty.
+    """
     angles_rad = finite_values(angles_rad)
     if angles_rad.size == 0:
         return np.nan
@@ -371,6 +491,12 @@ def circular_concentration(angles_rad) -> float:
 
 
 def count_true_runs(logical_values) -> float:
+    """Number of separate True-runs in a boolean sequence (rising-edge
+    count, plus 1 if the sequence starts True).
+
+    Input: boolean array.
+    Output: float count, NaN if empty.
+    """
     logical_values = np.asarray(logical_values, dtype=bool).ravel()
     if logical_values.size == 0:
         return np.nan
@@ -379,6 +505,12 @@ def count_true_runs(logical_values) -> float:
 
 
 def missing_time_fraction(time_s) -> float:
+    """Fraction of the window's total duration lost to sampling gaps (any
+    interval > 1.5x the median interval counts as a gap).
+
+    Input: timestamps [s].
+    Output: float in [0, 1], NaN if fewer than 3 samples or zero duration.
+    """
     time_s = np.sort(finite_values(time_s))
     if time_s.size < 3 or time_s[-1] <= time_s[0]:
         return np.nan
@@ -390,6 +522,11 @@ def missing_time_fraction(time_s) -> float:
 
 
 def sample_gap_count(time_s) -> float:
+    """Number of sampling gaps (intervals > 1.5x the median interval).
+
+    Input: timestamps [s].
+    Output: float count, NaN if fewer than 3 samples.
+    """
     time_s = np.sort(finite_values(time_s))
     if time_s.size < 3:
         return np.nan
@@ -399,6 +536,13 @@ def sample_gap_count(time_s) -> float:
 
 
 def mean_crossing_count(values) -> float:
+    """Number of times the signal crosses its own mean (sign changes of
+    x - mean(x)).
+
+    Input: array-like.
+    Output: float count, NaN if fewer than 2 finite values, 0.0 if no sign
+    change is possible.
+    """
     values = finite_values(values)
     if values.size < 2:
         return np.nan
@@ -410,6 +554,12 @@ def mean_crossing_count(values) -> float:
 
 
 def lag_one_autocorrelation(values) -> float:
+    """Pearson correlation of the series against itself shifted by one
+    sample: corr(x[:-1], x[1:]).
+
+    Input: array-like.
+    Output: float in [-1, 1], NaN if fewer than 4 finite values.
+    """
     values = finite_values(values)
     if values.size < 4:
         return np.nan
@@ -417,6 +567,14 @@ def lag_one_autocorrelation(values) -> float:
 
 
 def linear_slope(time_s, values) -> float:
+    """Ordinary-least-squares slope of values against time_s:
+
+        slope = sum((t_i - mean(t)) * (v_i - mean(v))) / sum((t_i - mean(t))^2)
+
+    Input: timestamps [s], values (paired, same length).
+    Output: float [value units / s], NaN if fewer than 2 paired samples or
+    zero time spread.
+    """
     time_s = np.asarray(time_s, dtype=float).ravel()
     values = np.asarray(values, dtype=float).ravel()
     valid = np.isfinite(time_s) & np.isfinite(values)
@@ -479,6 +637,12 @@ def best_lagged_correlation(gaze_values, ee_values, time_s, maximum_lag_s):
 
 
 def normalize_finite_to_unit_interval(values) -> np.ndarray:
+    """Linearly rescale the finite entries to [0, 1] using this array's own
+    min/max (min -> 0, max -> 1); non-finite entries stay NaN.
+
+    Input: array-like.
+    Output: array, same shape; all-NaN if empty, all-0.0 if the range is zero.
+    """
     values = np.asarray(values, dtype=float).ravel()
     normalized = np.full(values.shape, np.nan)
     finite_mask = np.isfinite(values)
@@ -501,6 +665,13 @@ def normalize_finite_to_unit_interval(values) -> np.ndarray:
 # ======================================================================
 
 def entropy_from_probabilities(probabilities) -> float:
+    """Shannon entropy: H = -sum(p_i * log2(p_i)) over the given (positive)
+    probabilities.
+
+    Input: probability-like values (need not sum to 1; zeros/non-finite
+    entries are dropped).
+    Output: float [bits], 0.0 if none are positive.
+    """
     probabilities = np.asarray(probabilities, dtype=float).ravel()
     probabilities = probabilities[
         np.isfinite(probabilities) & (probabilities > 0)]
@@ -510,6 +681,13 @@ def entropy_from_probabilities(probabilities) -> float:
 
 
 def shannon_entropy_from_states(states, state_count: int) -> float:
+    """Shannon entropy of the empirical distribution over discrete states
+    1..state_count (occupancy-frequency entropy).
+
+    Input: state labels (rounded to the nearest integer in
+    [1, state_count]), state_count.
+    Output: float [bits], NaN if no valid states.
+    """
     states = np.asarray(states, dtype=float).ravel()
     valid = np.isfinite(states) & (states >= 1) & (states <= state_count)
     states = np.round(states[valid]).astype(int)
@@ -521,6 +699,17 @@ def shannon_entropy_from_states(states, state_count: int) -> float:
 
 
 def transition_shannon_entropy(states, state_count: int) -> float:
+    """Entropy of state-TO-state transitions, averaged over the originating
+    state's own frequency:
+
+        H = sum_i (n_i / N) * H(transitions out of state i)
+
+    How unpredictable the NEXT state is, given the current one.
+
+    Input: a time-ordered sequence of state labels (as in
+    shannon_entropy_from_states), state_count.
+    Output: float [bits], NaN if fewer than 2 valid states.
+    """
     states = np.asarray(states, dtype=float).ravel()
     valid = np.isfinite(states) & (states >= 1) & (states <= state_count)
     states = np.round(states[valid]).astype(int)
@@ -559,6 +748,14 @@ def _normalize_to_workspace_unit_box(x, y, center_xy, half_extent):
 
 def spatial_gaze_states(
         x, y, center_xy, half_extent, bin_count_per_axis: int) -> np.ndarray:
+    """Assign each (x, y) sample to one of bin_count_per_axis^2 grid cells
+    within the FIXED workspace box (see _normalize_to_workspace_unit_box),
+    numbered 1..bin_count_per_axis^2 in row-major order.
+
+    Input: x, y positions, box center + half-extent, bins per axis.
+    Output: array of state IDs, one per sample (points outside the box are
+    clamped to the nearest edge bin, not dropped).
+    """
     x = np.asarray(x, dtype=float).ravel()
     y = np.asarray(y, dtype=float).ravel()
     valid = np.isfinite(x) & np.isfinite(y)
@@ -573,6 +770,14 @@ def spatial_gaze_states(
 
 def one_dimensional_display_entropy(
         values, center: float, half_extent: float, bin_count: int) -> float:
+    """Shannon entropy of ONE axis, binned over the FIXED
+    [center - half_extent, center + half_extent] workspace box
+    (bin_count equal-width bins).
+
+    Input: values (x or y positions), that axis's center + half-extent,
+    bin count.
+    Output: float [bits], NaN if empty.
+    """
     values = finite_values(values)
     if values.size == 0:
         return np.nan
@@ -691,17 +896,39 @@ def synchronize_gaze_and_end_effector(Gx, Gy, Gt, Ex, Ey, Et):
 
 
 def relative_offsets(Gx, Gy, Gt, Ex, Ey, Et):
+    """Per-sample gaze-minus-hand offset, on gaze's own timestamps (hand
+    position interpolated onto them first).
+
+    Input: gaze position/time, end-effector (hand) position/time.
+    Output: (offset_x, offset_y, time_s) arrays, synchronized and
+    already NaN-cleaned.
+    """
     gx, gy, ex, ey, time_s = synchronize_gaze_and_end_effector(
         Gx, Gy, Gt, Ex, Ey, Et)
     return gx - ex, gy - ey, time_s
 
 
 def gaze_end_effector_distance(Gx, Gy, Gt, Ex, Ey, Et) -> np.ndarray:
+    """Per-sample Euclidean distance from gaze to the hand:
+    hypot(offset_x, offset_y).
+
+    Input: gaze position/time, end-effector position/time.
+    Output: array of distances [m], one per synchronized sample.
+    """
     relative_x, relative_y, _ = relative_offsets(Gx, Gy, Gt, Ex, Ey, Et)
     return np.hypot(relative_x, relative_y)
 
 
 def gaze_ee_velocity_cosine(Gx, Gy, Gt, Ex, Ey, Et) -> np.ndarray:
+    """Per-sample cosine similarity between the gaze velocity vector and
+    the hand velocity vector:
+
+        cos(theta) = (v_gaze . v_hand) / (|v_gaze| * |v_hand|)
+
+    Input: gaze position/time, end-effector position/time.
+    Output: array in [-1, 1], one entry per sample where both are
+    moving (speed > 0).
+    """
     gx, gy, ex, ey, time_s = synchronize_gaze_and_end_effector(
         Gx, Gy, Gt, Ex, Ey, Et)
     gaze_motion = calculate_planar_motion(gx, gy, time_s)
@@ -717,6 +944,15 @@ def gaze_ee_velocity_cosine(Gx, Gy, Gt, Ex, Ey, Et) -> np.ndarray:
 
 def build_gaze_feature_bank(
         config: FeatureConfig) -> List[Tuple[str, FeatureFunction]]:
+    """Build the 102-feature gaze bank -- every feature computed from gaze
+    position/time alone, or gaze related to the synchronized end-effector
+    (hand) position (shared (Gx, Gy, Gt, Ex, Ey, Et) -> float interface,
+    see the section header above).
+
+    Input: FeatureConfig (workspace center/extent, speed thresholds,
+    close-distance thresholds, entropy bin counts).
+    Output: list of (name, function) pairs.
+    """
     cx, cy = config.workspace_center_xy_m
     half_extent = config.workspace_half_extent_m
     low_v = config.low_speed_threshold_m_s
@@ -728,6 +964,11 @@ def build_gaze_feature_bank(
     bank: List[Tuple[str, FeatureFunction]] = []
 
     def add(name: str, fn: FeatureFunction) -> None:
+        """Register one (name, function) pair into this bank's feature list.
+
+        Input: feature name, and a function matching this bank's shared interface.
+        Output: None (appends to the enclosing bank list).
+        """
         bank.append((name, fn))
 
     # --- 001-024: gaze position distribution ---
@@ -764,12 +1005,26 @@ def build_gaze_feature_bank(
 
     # --- 025-029: dispersion / path ---
     def _gaze_dispersion_rms(Gx, Gy, Gt, Ex, Ey, Et):
+        """RMS distance of each gaze sample from this window's own mean gaze
+        position: sqrt(mean((x_i - x_mean)^2 + (y_i - y_mean)^2)).
+
+        -> float [m], a single-number spread measure.
+        """
         center_x, center_y = safe_mean(Gx), safe_mean(Gy)
         radius = np.hypot(np.asarray(Gx) - center_x, np.asarray(Gy) - center_y)
         return safe_root_mean_square(radius)
     add("gaze_dispersion_rms", _gaze_dispersion_rms)
 
     def _bcea_68(Gx, Gy, Gt, Ex, Ey, Et):
+        """Area of the 68%-confidence bivariate contour ellipse (BCEA) of the
+        gaze scatter:
+
+            2*pi*k*sigma_x*sigma_y*sqrt(1 - rho^2),  k = -ln(1 - 0.68)
+
+        sigma_x/sigma_y/rho are the gaze x/y std devs and their correlation.
+
+        -> float [m^2].
+        """
         sigma_x, sigma_y = safe_std(Gx), safe_std(Gy)
         rho_xy = pearson_correlation(Gx, Gy)
         if not np.isfinite(sigma_x) or not np.isfinite(sigma_y) or \
@@ -781,16 +1036,29 @@ def build_gaze_feature_bank(
     add("bcea_68", _bcea_68)
 
     def _gaze_path_length(Gx, Gy, Gt, Ex, Ey, Et):
+        """Total length of the gaze scanpath (sum of consecutive-sample steps).
+
+        -> float [m].
+        """
         x, y, _ = clean_planar_time_series(Gx, Gy, Gt)
         return planar_path_length(x, y)
     add("gaze_path_length", _gaze_path_length)
 
     def _gaze_net_displacement(Gx, Gy, Gt, Ex, Ey, Et):
+        """Straight-line distance from the first to the last gaze sample.
+
+        -> float [m].
+        """
         x, y, _ = clean_planar_time_series(Gx, Gy, Gt)
         return planar_net_displacement(x, y)
     add("gaze_net_displacement", _gaze_net_displacement)
 
     def _gaze_path_efficiency(Gx, Gy, Gt, Ex, Ey, Et):
+        """How directly the gaze moved: net_displacement / path_length, in
+        [0, 1] (1 = a straight line, lower = more wandering/backtracking).
+
+        -> float.
+        """
         x, y, _ = clean_planar_time_series(Gx, Gy, Gt)
         return safe_ratio(
             planar_net_displacement(x, y), planar_path_length(x, y))
@@ -866,6 +1134,12 @@ def build_gaze_feature_bank(
                 calculate_planar_motion(Gx, Gy, Gt)["direction"]))
 
     def _mean_absolute_direction_change(Gx, Gy, Gt, Ex, Ey, Et):
+        """Mean absolute turn angle between consecutive gaze-velocity directions
+        (wrapped to [-pi, pi] before averaging) -- how jerky/zigzagging the
+        scanpath is.
+
+        -> float [rad].
+        """
         direction = calculate_planar_motion(Gx, Gy, Gt)["direction"]
         direction_change = np.arctan2(
             np.sin(np.diff(direction)), np.cos(np.diff(direction)))
@@ -890,16 +1164,29 @@ def build_gaze_feature_bank(
 
     # --- 055-057: gaze sample quality ---
     def _gaze_missing_time_fraction(Gx, Gy, Gt, Ex, Ey, Et):
+        """Fraction of this window's duration lost to gaps in the gaze sample
+        timestamps (see missing_time_fraction).
+
+        -> float in [0, 1].
+        """
         _, _, time_s = clean_planar_time_series(Gx, Gy, Gt)
         return missing_time_fraction(time_s)
     add("gaze_missing_time_fraction", _gaze_missing_time_fraction)
 
     def _gaze_gap_count(Gx, Gy, Gt, Ex, Ey, Et):
+        """Number of sampling gaps in the gaze timestamps (see sample_gap_count).
+
+        -> float count.
+        """
         _, _, time_s = clean_planar_time_series(Gx, Gy, Gt)
         return sample_gap_count(time_s)
     add("gaze_gap_count", _gaze_gap_count)
 
     def _gaze_sample_rate(Gx, Gy, Gt, Ex, Ey, Et):
+        """Effective gaze sample rate over this window: (n - 1) / (t_last - t_first).
+
+        -> float [Hz].
+        """
         _, _, time_s = clean_planar_time_series(Gx, Gy, Gt)
         if time_s.size < 2 or time_s[-1] <= time_s[0]:
             return np.nan
@@ -935,6 +1222,11 @@ def build_gaze_feature_bank(
                        <= 0.5 * half_extent).astype(float)))
 
     def _outside_display_fraction(Gx, Gy, Gt, Ex, Ey, Et):
+        """Fraction of gaze samples that fall outside the fixed workspace box
+        (center +/- half_extent, either axis).
+
+        -> float in [0, 1].
+        """
         Gx, Gy = np.asarray(Gx), np.asarray(Gy)
         outside = (Gx < cx - half_extent) | (Gx > cx + half_extent) | \
             (Gy < cy - half_extent) | (Gy > cy + half_extent)
@@ -995,11 +1287,22 @@ def build_gaze_feature_bank(
             safe_minimum(gaze_end_effector_distance(Gx, Gy, Gt, Ex, Ey, Et)))
 
     def _final_gaze_ee_distance(Gx, Gy, Gt, Ex, Ey, Et):
+        """Gaze-to-hand distance at the LAST sample of the window (not
+        averaged over the window).
+
+        -> float [m], NaN if the window is empty.
+        """
         distance = gaze_end_effector_distance(Gx, Gy, Gt, Ex, Ey, Et)
         return float(distance[-1]) if distance.size else np.nan
     add("final_gaze_ee_distance", _final_gaze_ee_distance)
 
     def _gaze_ee_distance_slope(Gx, Gy, Gt, Ex, Ey, Et):
+        """Linear trend of gaze-to-hand distance over time within the window
+        (see linear_slope) -- positive means gaze was drifting away from the
+        hand as the window progressed.
+
+        -> float [m/s].
+        """
         relative_x, relative_y, time_s = relative_offsets(
             Gx, Gy, Gt, Ex, Ey, Et)
         return linear_slope(time_s, np.hypot(relative_x, relative_y))
@@ -1020,18 +1323,31 @@ def build_gaze_feature_bank(
 
     # --- 087-095: gaze-EE correlation / alignment ---
     def _gaze_ee_x_correlation(Gx, Gy, Gt, Ex, Ey, Et):
+        """Pearson correlation between synchronized gaze-x and hand-x position.
+
+        -> float in [-1, 1].
+        """
         gx, _, ex, _, _ = synchronize_gaze_and_end_effector(
             Gx, Gy, Gt, Ex, Ey, Et)
         return pearson_correlation(gx, ex)
     add("gaze_ee_x_correlation", _gaze_ee_x_correlation)
 
     def _gaze_ee_y_correlation(Gx, Gy, Gt, Ex, Ey, Et):
+        """Pearson correlation between synchronized gaze-y and hand-y position.
+
+        -> float in [-1, 1].
+        """
         _, gy, _, ey, _ = synchronize_gaze_and_end_effector(
             Gx, Gy, Gt, Ex, Ey, Et)
         return pearson_correlation(gy, ey)
     add("gaze_ee_y_correlation", _gaze_ee_y_correlation)
 
     def _gaze_ee_speed_correlation(Gx, Gy, Gt, Ex, Ey, Et):
+        """Pearson correlation between gaze speed and hand speed, both on the
+        synchronized clock.
+
+        -> float in [-1, 1].
+        """
         gx, gy, ex, ey, time_s = synchronize_gaze_and_end_effector(
             Gx, Gy, Gt, Ex, Ey, Et)
         gaze_motion = calculate_planar_motion(gx, gy, time_s)
@@ -1040,11 +1356,22 @@ def build_gaze_feature_bank(
     add("gaze_ee_speed_correlation", _gaze_ee_speed_correlation)
 
     def _relative_path_length(Gx, Gy, Gt, Ex, Ey, Et):
+        """Path length traced by the RELATIVE (gaze - hand) offset over the
+        window -- how much the offset itself moved around, not the gaze or
+        hand individually.
+
+        -> float [m].
+        """
         relative_x, relative_y, _ = relative_offsets(Gx, Gy, Gt, Ex, Ey, Et)
         return planar_path_length(relative_x, relative_y)
     add("relative_path_length", _relative_path_length)
 
     def _mean_relative_speed(Gx, Gy, Gt, Ex, Ey, Et):
+        """Mean speed of the relative (gaze - hand) offset, i.e. how fast the
+        gap between gaze and hand was opening/closing/rotating.
+
+        -> float [m/s].
+        """
         relative_x, relative_y, time_s = relative_offsets(
             Gx, Gy, Gt, Ex, Ey, Et)
         return safe_mean(
@@ -1052,6 +1379,11 @@ def build_gaze_feature_bank(
     add("mean_relative_speed", _mean_relative_speed)
 
     def _std_relative_speed(Gx, Gy, Gt, Ex, Ey, Et):
+        """Standard deviation of the relative-offset speed (see
+        mean_relative_speed above).
+
+        -> float [m/s].
+        """
         relative_x, relative_y, time_s = relative_offsets(
             Gx, Gy, Gt, Ex, Ey, Et)
         return safe_std(
@@ -1067,6 +1399,12 @@ def build_gaze_feature_bank(
                       .astype(float)))
 
     def _gaze_to_ee_speed_ratio(Gx, Gy, Gt, Ex, Ey, Et):
+        """Ratio of mean gaze speed to mean hand speed:
+        mean(|v_gaze|) / mean(|v_hand|) -- how much faster/slower the eyes
+        moved than the hand.
+
+        -> float, unitless.
+        """
         gx, gy, ex, ey, time_s = synchronize_gaze_and_end_effector(
             Gx, Gy, Gt, Ex, Ey, Et)
         gaze_motion = calculate_planar_motion(gx, gy, time_s)
@@ -1077,6 +1415,11 @@ def build_gaze_feature_bank(
 
     # --- 096-100: cross-correlation / lead-lag ---
     def _max_x_cross_correlation(Gx, Gy, Gt, Ex, Ey, Et):
+        """Best Pearson correlation between gaze-x and hand-x over a
+        +/-0.25 s lag search (see best_lagged_correlation).
+
+        -> float in [-1, 1].
+        """
         gx, _, ex, _, time_s = synchronize_gaze_and_end_effector(
             Gx, Gy, Gt, Ex, Ey, Et)
         value, _ = best_lagged_correlation(gx, ex, time_s, 0.25)
@@ -1084,6 +1427,11 @@ def build_gaze_feature_bank(
     add("max_x_cross_correlation", _max_x_cross_correlation)
 
     def _x_lead_at_max_correlation_s(Gx, Gy, Gt, Ex, Ey, Et):
+        """The lag [s] at which max_x_cross_correlation was achieved;
+        positive means gaze led the hand in x.
+
+        -> float [s].
+        """
         gx, _, ex, _, time_s = synchronize_gaze_and_end_effector(
             Gx, Gy, Gt, Ex, Ey, Et)
         _, lag_s = best_lagged_correlation(gx, ex, time_s, 0.25)
@@ -1091,6 +1439,11 @@ def build_gaze_feature_bank(
     add("x_lead_at_max_correlation_s", _x_lead_at_max_correlation_s)
 
     def _max_y_cross_correlation(Gx, Gy, Gt, Ex, Ey, Et):
+        """Best Pearson correlation between gaze-y and hand-y over a
+        +/-0.25 s lag search.
+
+        -> float in [-1, 1].
+        """
         _, gy, _, ey, time_s = synchronize_gaze_and_end_effector(
             Gx, Gy, Gt, Ex, Ey, Et)
         value, _ = best_lagged_correlation(gy, ey, time_s, 0.25)
@@ -1098,6 +1451,11 @@ def build_gaze_feature_bank(
     add("max_y_cross_correlation", _max_y_cross_correlation)
 
     def _y_lead_at_max_correlation_s(Gx, Gy, Gt, Ex, Ey, Et):
+        """The lag [s] at which max_y_cross_correlation was achieved;
+        positive means gaze led the hand in y.
+
+        -> float [s].
+        """
         _, gy, _, ey, time_s = synchronize_gaze_and_end_effector(
             Gx, Gy, Gt, Ex, Ey, Et)
         _, lag_s = best_lagged_correlation(gy, ey, time_s, 0.25)
@@ -1105,6 +1463,16 @@ def build_gaze_feature_bank(
     add("y_lead_at_max_correlation_s", _y_lead_at_max_correlation_s)
 
     def _mean_gaze_lead_along_ee_motion(Gx, Gy, Gt, Ex, Ey, Et):
+        """Mean signed projection of the (gaze - hand) offset onto the hand's
+        own unit velocity direction:
+
+            ((gaze - hand) . v_hand) / |v_hand|
+
+        averaged over moving samples -- positive means gaze sits ahead of the
+        hand along its current heading, on average.
+
+        -> float [m].
+        """
         gx, gy, ex, ey, time_s = synchronize_gaze_and_end_effector(
             Gx, Gy, Gt, Ex, Ey, Et)
         ee_motion = calculate_planar_motion(ex, ey, time_s)
@@ -1299,6 +1667,14 @@ def spatial_states_over_range(x, y, bin_count_per_axis: int) -> np.ndarray:
 
 def build_robot_feature_bank(
         config: FeatureConfig) -> List[Tuple[str, FeatureFunction]]:
+    """Build the 96-feature robot bank -- every feature computed from
+    robot motion/force/command signals alone, no gaze involved (shared
+    (Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy) -> float interface, see
+    the section header above).
+
+    Input: FeatureConfig (robot speed thresholds, entropy bin counts).
+    Output: list of (name, function) pairs.
+    """
     low_v = config.robot_low_speed_threshold_m_s
     high_v = config.robot_high_speed_threshold_m_s
     bins_coarse = config.robot_spatial_bin_count_coarse
@@ -1307,6 +1683,11 @@ def build_robot_feature_bank(
     bank: List[Tuple[str, FeatureFunction]] = []
 
     def add(name: str, fn: FeatureFunction) -> None:
+        """Register one (name, function) pair into this bank's feature list.
+
+        Input: feature name, and a function matching this bank's shared interface.
+        Output: None (appends to the enclosing bank list).
+        """
         bank.append((name, fn))
 
     # --- 001-024: position distribution ---
@@ -1367,12 +1748,22 @@ def build_robot_feature_bank(
 
     # --- 025-029: dispersion / path ---
     def _position_dispersion_rms(Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """RMS distance of each position sample from this window's own mean
+        position.
+
+        -> float [m].
+        """
         center_x, center_y = safe_mean(Px), safe_mean(Py)
         radius = np.hypot(np.asarray(Px) - center_x, np.asarray(Py) - center_y)
         return safe_root_mean_square(radius)
     add("position_dispersion_rms", _position_dispersion_rms)
 
     def _position_bcea_68(Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Area of the 68%-confidence bivariate contour ellipse of the
+        position scatter (see the gaze bank's _bcea_68 for the same formula).
+
+        -> float [m^2].
+        """
         sigma_x, sigma_y = safe_std(Px), safe_std(Py)
         rho_xy = pearson_correlation(Px, Py)
         if not np.isfinite(sigma_x) or not np.isfinite(sigma_y) or \
@@ -1384,16 +1775,29 @@ def build_robot_feature_bank(
     add("position_bcea_68", _position_bcea_68)
 
     def _path_length(Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Total path length travelled over the window.
+
+        -> float [m].
+        """
         x, y, _ = clean_planar_time_series(Px, Py, Pt)
         return planar_path_length(x, y)
     add("path_length", _path_length)
 
     def _net_displacement(Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Straight-line distance from the first to the last position sample.
+
+        -> float [m].
+        """
         x, y, _ = clean_planar_time_series(Px, Py, Pt)
         return planar_net_displacement(x, y)
     add("net_displacement", _net_displacement)
 
     def _path_efficiency(Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """net_displacement / path_length, in [0, 1] -- how directly the
+        robot moved.
+
+        -> float.
+        """
         x, y, _ = clean_planar_time_series(Px, Py, Pt)
         return safe_ratio(
             planar_net_displacement(x, y), planar_path_length(x, y))
@@ -1466,6 +1870,10 @@ def build_robot_feature_bank(
 
     def _mean_absolute_direction_change(
             Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Mean absolute turn angle between consecutive velocity directions.
+
+        -> float [rad].
+        """
         direction = calculate_robot_motion(Vx, Vy, Pt)["direction"]
         direction_change = np.arctan2(
             np.sin(np.diff(direction)), np.cos(np.diff(direction)))
@@ -1490,16 +1898,28 @@ def build_robot_feature_bank(
 
     # --- 055-057: sample quality ---
     def _missing_time_fraction(Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Fraction of this window's duration lost to sampling gaps.
+
+        -> float in [0, 1].
+        """
         _, _, time_s = clean_planar_time_series(Px, Py, Pt)
         return missing_time_fraction(time_s)
     add("missing_time_fraction", _missing_time_fraction)
 
     def _gap_count(Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Number of sampling gaps in the robot timestamps.
+
+        -> float count.
+        """
         _, _, time_s = clean_planar_time_series(Px, Py, Pt)
         return sample_gap_count(time_s)
     add("gap_count", _gap_count)
 
     def _sample_rate(Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Effective robot sample rate over this window.
+
+        -> float [Hz].
+        """
         _, _, time_s = clean_planar_time_series(Px, Py, Pt)
         if time_s.size < 2 or time_s[-1] <= time_s[0]:
             return np.nan
@@ -1566,6 +1986,15 @@ def build_robot_feature_bank(
 
     def _curvature_sign_reversal_rate(
             Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """How often the path's curvature changes sign (left <-> right
+        turns), normalized by distance travelled:
+
+            (number of sign changes) / path_length
+
+        A high rate means a wiggly/serpentine path, independent of how far it went.
+
+        -> float [1/m].
+        """
         curvature = calculate_robot_motion(Vx, Vy, Pt)["curvature"]
         valid_curvature = curvature[np.isfinite(curvature)]
         x, y, _ = clean_planar_time_series(Px, Py, Pt)
@@ -1579,12 +2008,23 @@ def build_robot_feature_bank(
 
     # --- 074-075: power-law fit ---
     def _power_law_r2(Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Goodness of fit (R^2) of the speed-curvature power law
+        v = K * kappa^-beta, fit within this window (see fit_power_law).
+
+        -> float, NaN if too few valid samples.
+        """
         motion = calculate_robot_motion(Vx, Vy, Pt)
         r_squared, _ = fit_power_law(motion["speed"], motion["curvature"])
         return r_squared
     add("power_law_r2", _power_law_r2)
 
     def _power_law_exponent(Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """The fitted power-law exponent beta from v = K * kappa^-beta (see
+        fit_power_law); the classic two-thirds power law corresponds to
+        beta = 1/3.
+
+        -> float, NaN if too few valid samples.
+        """
         motion = calculate_robot_motion(Vx, Vy, Pt)
         _, beta = fit_power_law(motion["speed"], motion["curvature"])
         return beta
@@ -1641,12 +2081,22 @@ def build_robot_feature_bank(
 
     # --- 092-093: power. DAMPING-CONFOUNDED -- inherits force's confound. ---
     def _mean_power(Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Mean mechanical power delivered by the human, force dot velocity:
+        mean(Fx*Vx + Fy*Vy). DAMPING-CONFOUNDED -- see module docstring.
+
+        -> float [W].
+        """
         power_w = np.asarray(Fx) * np.asarray(Vx) + \
             np.asarray(Fy) * np.asarray(Vy)
         return safe_mean(power_w)
     add("mean_power", _mean_power)
 
     def _std_power(Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Standard deviation of instantaneous power (see mean_power).
+        DAMPING-CONFOUNDED.
+
+        -> float [W].
+        """
         power_w = np.asarray(Fx) * np.asarray(Vx) + \
             np.asarray(Fy) * np.asarray(Vy)
         return safe_std(power_w)
@@ -1655,12 +2105,23 @@ def build_robot_feature_bank(
     # --- 094-096: command tracking. DAMPING-CONFOUNDED -- see module
     # docstring. ---
     def _mean_tracking_error(Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Mean gap between commanded and actual TCP velocity:
+        mean(hypot(Vcx - Vx, Vcy - Vy)). DAMPING-CONFOUNDED (higher damping
+        means more lag for the same intent) -- see module docstring.
+
+        -> float [m/s].
+        """
         tracking_error = np.hypot(
             np.asarray(Vcx) - np.asarray(Vx), np.asarray(Vcy) - np.asarray(Vy))
         return safe_mean(tracking_error)
     add("mean_tracking_error", _mean_tracking_error)
 
     def _std_tracking_error(Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Standard deviation of the commanded-vs-actual velocity gap (see
+        mean_tracking_error). DAMPING-CONFOUNDED.
+
+        -> float [m/s].
+        """
         tracking_error = np.hypot(
             np.asarray(Vcx) - np.asarray(Vx), np.asarray(Vcy) - np.asarray(Vy))
         return safe_std(tracking_error)
@@ -1668,6 +2129,12 @@ def build_robot_feature_bank(
 
     def _commanded_actual_speed_correlation(
             Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Pearson correlation between commanded speed and actual speed --
+        how closely the robot tracked its own velocity setpoint.
+        DAMPING-CONFOUNDED.
+
+        -> float in [-1, 1].
+        """
         commanded_speed = np.hypot(np.asarray(Vcx), np.asarray(Vcy))
         actual_speed = np.hypot(np.asarray(Vx), np.asarray(Vy))
         return pearson_correlation(commanded_speed, actual_speed)
@@ -1748,6 +2215,13 @@ def synchronize_robot_onto_gaze(
     Vcy_c = np.asarray(Vcy, dtype=float)[robot_index]
 
     def interp(xp, fp):
+        """Shorthand for np.interp onto the gaze clock (gt), returning NaN
+        outside [xp[0], xp[-1]] instead of numpy's default of clamping to the
+        boundary value.
+
+        Input: source x-coordinates xp, source values fp.
+        Output: array of fp interpolated at gt.
+        """
         return np.interp(gt, xp, fp, left=np.nan, right=np.nan)
 
     px_i = interp(robot_time_s, Px_c)
@@ -1906,14 +2380,32 @@ def joint_gaze_ee_velocity_cosine(
 
 def build_joint_feature_bank(
         config: FeatureConfig) -> List[Tuple[str, FeatureFunction]]:
+    """Build the 51-feature joint bank -- every feature genuinely needs
+    BOTH gaze and robot data (shared (Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx,
+    Fy, Wmag, Vcx, Vcy) -> float interface, see the section header above).
+
+    Input: FeatureConfig (the joint close-distance threshold).
+    Output: list of (name, function) pairs.
+    """
     close_m = config.joint_close_threshold_m
 
     bank: List[Tuple[str, FeatureFunction]] = []
 
     def add(name: str, fn: FeatureFunction) -> None:
+        """Register one (name, function) pair into this bank's feature list.
+
+        Input: feature name, and a function matching this bank's shared interface.
+        Output: None (appends to the enclosing bank list).
+        """
         bank.append((name, fn))
 
     def _distance(synced):
+        """Per-sample gaze-to-hand distance from an already-synchronized dict
+        (see synchronize_robot_onto_gaze).
+
+        Input: a synced dict with 'gaze_x'/'gaze_y'/'robot_x'/'robot_y' keys.
+        Output: array of distances [m].
+        """
         return np.hypot(
             synced["gaze_x"] - synced["robot_x"],
             synced["gaze_y"] - synced["robot_y"])
@@ -1952,6 +2444,10 @@ def build_joint_feature_bank(
 
     def _final_gaze_ee_distance(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Gaze-to-hand distance at the last synchronized sample.
+
+        -> float [m].
+        """
         distance = _distance(synchronize_robot_onto_gaze(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy))
         return float(distance[-1]) if distance.size else np.nan
@@ -1959,6 +2455,10 @@ def build_joint_feature_bank(
 
     def _gaze_ee_distance_slope(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Linear trend of gaze-to-hand distance over time (see linear_slope).
+
+        -> float [m/s].
+        """
         synced = synchronize_robot_onto_gaze(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy)
         return linear_slope(synced["time_s"], _distance(synced))
@@ -1987,6 +2487,10 @@ def build_joint_feature_bank(
 
     def _relative_path_length(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Path length traced by the (gaze - hand) offset over the window.
+
+        -> float [m].
+        """
         synced = synchronize_robot_onto_gaze(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy)
         return planar_path_length(
@@ -1996,6 +2500,11 @@ def build_joint_feature_bank(
 
     def _mean_relative_speed(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Mean speed of the relative (gaze - hand) offset, computed by
+        differentiating the offset itself.
+
+        -> float [m/s].
+        """
         synced = synchronize_robot_onto_gaze(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy)
         relative_vx = np.gradient(
@@ -2011,6 +2520,11 @@ def build_joint_feature_bank(
 
     def _std_relative_speed(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Standard deviation of the relative-offset speed (see
+        mean_relative_speed).
+
+        -> float [m/s].
+        """
         synced = synchronize_robot_onto_gaze(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy)
         relative_vx = np.gradient(
@@ -2042,6 +2556,10 @@ def build_joint_feature_bank(
 
     def _gaze_ee_x_correlation(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Pearson correlation between synchronized gaze-x and hand-x position.
+
+        -> float in [-1, 1].
+        """
         synced = synchronize_robot_onto_gaze(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy)
         return pearson_correlation(synced["gaze_x"], synced["robot_x"])
@@ -2049,6 +2567,10 @@ def build_joint_feature_bank(
 
     def _gaze_ee_y_correlation(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Pearson correlation between synchronized gaze-y and hand-y position.
+
+        -> float in [-1, 1].
+        """
         synced = synchronize_robot_onto_gaze(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy)
         return pearson_correlation(synced["gaze_y"], synced["robot_y"])
@@ -2056,6 +2578,10 @@ def build_joint_feature_bank(
 
     def _gaze_ee_speed_correlation(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Pearson correlation between gaze speed and hand speed.
+
+        -> float in [-1, 1].
+        """
         synced = synchronize_robot_onto_gaze(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy)
         gaze_motion = calculate_robot_motion(
@@ -2075,6 +2601,10 @@ def build_joint_feature_bank(
 
     def _gaze_to_ee_speed_ratio(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Ratio of mean gaze speed to mean hand speed.
+
+        -> float, unitless.
+        """
         synced = synchronize_robot_onto_gaze(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy)
         gaze_motion = calculate_robot_motion(
@@ -2085,6 +2615,11 @@ def build_joint_feature_bank(
 
     def _max_x_cross_correlation(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Best Pearson correlation between gaze-x and hand-x over a
+        +/-0.25 s lag search.
+
+        -> float in [-1, 1].
+        """
         synced = synchronize_robot_onto_gaze(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy)
         value, _ = best_lagged_correlation(
@@ -2094,6 +2629,11 @@ def build_joint_feature_bank(
 
     def _x_lead_at_max_correlation_s(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Lag [s] at which max_x_cross_correlation was achieved; positive
+        means gaze led.
+
+        -> float [s].
+        """
         synced = synchronize_robot_onto_gaze(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy)
         _, lag_s = best_lagged_correlation(
@@ -2103,6 +2643,11 @@ def build_joint_feature_bank(
 
     def _max_y_cross_correlation(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Best Pearson correlation between gaze-y and hand-y over a
+        +/-0.25 s lag search.
+
+        -> float in [-1, 1].
+        """
         synced = synchronize_robot_onto_gaze(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy)
         value, _ = best_lagged_correlation(
@@ -2112,6 +2657,10 @@ def build_joint_feature_bank(
 
     def _y_lead_at_max_correlation_s(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Lag [s] at which max_y_cross_correlation was achieved.
+
+        -> float [s].
+        """
         synced = synchronize_robot_onto_gaze(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy)
         _, lag_s = best_lagged_correlation(
@@ -2121,6 +2670,12 @@ def build_joint_feature_bank(
 
     def _mean_gaze_lead_along_ee_motion(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Mean signed projection of the (gaze - hand) offset onto the
+        hand's own unit velocity direction -- positive means gaze sits ahead
+        of the hand's current heading, on average.
+
+        -> float [m].
+        """
         synced = synchronize_robot_onto_gaze(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy)
         moving = synced["speed"] > 1e-9
@@ -2137,6 +2692,11 @@ def build_joint_feature_bank(
     # --- 031-036: gaze vs. robot path curvature ---
     def _correlation_gaze_ee_distance_curvature(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Pearson correlation between gaze-to-hand distance and |path
+        curvature| -- does gaze drift further from the hand during tighter turns?
+
+        -> float in [-1, 1].
+        """
         synced = synchronize_robot_onto_gaze(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy)
         return pearson_correlation(
@@ -2146,6 +2706,10 @@ def build_joint_feature_bank(
 
     def _correlation_gaze_speed_absolute_curvature(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Pearson correlation between gaze speed and |path curvature|.
+
+        -> float in [-1, 1].
+        """
         synced = synchronize_robot_onto_gaze(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy)
         gaze_motion = calculate_robot_motion(
@@ -2157,6 +2721,12 @@ def build_joint_feature_bank(
 
     def _mean_curvature_when_gaze_close(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Mean |curvature| restricted to samples where gaze-to-hand
+        distance is AT OR BELOW this window's own median (see
+        curvature_conditioned_on_distance).
+
+        -> float [1/m].
+        """
         synced = synchronize_robot_onto_gaze(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy)
         return curvature_conditioned_on_distance(
@@ -2165,6 +2735,11 @@ def build_joint_feature_bank(
 
     def _mean_curvature_when_gaze_far(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Mean |curvature| restricted to samples where gaze-to-hand
+        distance is ABOVE this window's own median.
+
+        -> float [1/m].
+        """
         synced = synchronize_robot_onto_gaze(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy)
         return curvature_conditioned_on_distance(
@@ -2173,6 +2748,12 @@ def build_joint_feature_bank(
 
     def _fraction_gaze_close_during_high_curvature(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Of the samples with above-median |curvature|, the fraction where
+        gaze was also within joint_close_threshold_m of the hand (see
+        fraction_close_during_high_reference).
+
+        -> float in [0, 1].
+        """
         synced = synchronize_robot_onto_gaze(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy)
         return fraction_close_during_high_reference(
@@ -2182,6 +2763,12 @@ def build_joint_feature_bank(
 
     def _correlation_gaze_offset_angle_curvature(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Pearson correlation between path curvature (signed) and the
+        signed angle from the hand's velocity direction to the (gaze - hand)
+        offset -- does gaze swing to one side more as the turn tightens?
+
+        -> float in [-1, 1].
+        """
         synced = synchronize_robot_onto_gaze(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy)
         offset_angle_deg = signed_angle_series(
@@ -2195,6 +2782,13 @@ def build_joint_feature_bank(
     # --- 037-042: gaze vs. robot force. DAMPING-CONFOUNDED. ---
     def _angle_gaze_offset_to_force(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Mean signed angle [deg] from the applied-force direction to the
+        (gaze - hand) offset direction, restricted to samples where
+        |force| >= 0.5 N (below that, force direction is unreliable).
+        DAMPING-CONFOUNDED -- see module docstring.
+
+        -> float [deg].
+        """
         MINIMUM_FORCE_FOR_DIRECTION_N = 0.5
         synced = synchronize_robot_onto_gaze(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy)
@@ -2210,6 +2804,11 @@ def build_joint_feature_bank(
 
     def _correlation_gaze_ee_distance_force(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Pearson correlation between gaze-to-hand distance and force
+        magnitude. DAMPING-CONFOUNDED.
+
+        -> float in [-1, 1].
+        """
         synced = synchronize_robot_onto_gaze(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy)
         return pearson_correlation(_distance(synced), synced["force_magnitude"])
@@ -2218,6 +2817,11 @@ def build_joint_feature_bank(
 
     def _correlation_gaze_speed_force(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Pearson correlation between gaze speed and force magnitude.
+        DAMPING-CONFOUNDED.
+
+        -> float in [-1, 1].
+        """
         synced = synchronize_robot_onto_gaze(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy)
         gaze_motion = calculate_robot_motion(
@@ -2228,6 +2832,12 @@ def build_joint_feature_bank(
 
     def _mean_gaze_ee_distance_high_force(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Mean gaze-to-hand distance restricted to samples with
+        ABOVE-median force magnitude (see value_conditioned_on_reference).
+        DAMPING-CONFOUNDED.
+
+        -> float [m].
+        """
         synced = synchronize_robot_onto_gaze(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy)
         return value_conditioned_on_reference(
@@ -2236,6 +2846,11 @@ def build_joint_feature_bank(
 
     def _mean_gaze_ee_distance_low_force(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Mean gaze-to-hand distance restricted to samples with
+        AT-OR-BELOW-median force magnitude. DAMPING-CONFOUNDED.
+
+        -> float [m].
+        """
         synced = synchronize_robot_onto_gaze(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy)
         return value_conditioned_on_reference(
@@ -2244,6 +2859,11 @@ def build_joint_feature_bank(
 
     def _fraction_gaze_close_during_high_force(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Of the samples with above-median force, the fraction where gaze
+        was also within joint_close_threshold_m of the hand. DAMPING-CONFOUNDED.
+
+        -> float in [0, 1].
+        """
         synced = synchronize_robot_onto_gaze(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy)
         return fraction_close_during_high_reference(
@@ -2254,6 +2874,11 @@ def build_joint_feature_bank(
     # --- 043-044: gaze vs. robot angular speed (wrist rotation) ---
     def _correlation_gaze_speed_angular_speed(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Pearson correlation between gaze speed and TCP angular speed
+        (wrist rotation rate).
+
+        -> float in [-1, 1].
+        """
         synced = synchronize_robot_onto_gaze(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy)
         gaze_motion = calculate_robot_motion(
@@ -2265,6 +2890,11 @@ def build_joint_feature_bank(
 
     def _correlation_gaze_ee_distance_angular_speed(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Pearson correlation between gaze-to-hand distance and TCP
+        angular speed.
+
+        -> float in [-1, 1].
+        """
         synced = synchronize_robot_onto_gaze(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy)
         return pearson_correlation(_distance(synced), synced["angular_speed"])
@@ -2275,6 +2905,11 @@ def build_joint_feature_bank(
     # CONFOUNDED. ---
     def _correlation_gaze_speed_tracking_error(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Pearson correlation between gaze speed and command-tracking
+        error (|commanded - actual| velocity). DAMPING-CONFOUNDED.
+
+        -> float in [-1, 1].
+        """
         synced = synchronize_robot_onto_gaze(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy)
         gaze_motion = calculate_robot_motion(
@@ -2286,6 +2921,11 @@ def build_joint_feature_bank(
 
     def _correlation_gaze_ee_distance_tracking_error(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Pearson correlation between gaze-to-hand distance and
+        command-tracking error. DAMPING-CONFOUNDED.
+
+        -> float in [-1, 1].
+        """
         synced = synchronize_robot_onto_gaze(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy)
         return pearson_correlation(_distance(synced), synced["tracking_error"])
@@ -2300,6 +2940,12 @@ def build_joint_feature_bank(
     # path (no shape .obj is available here to project onto). ---
     def _angle_gaze_offset_to_velocity(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Mean signed angle [deg] from the hand's velocity direction to
+        the (gaze - hand) offset direction, restricted to samples where
+        speed >= 0.005 m/s.
+
+        -> float [deg].
+        """
         MINIMUM_SPEED_M_S = 0.005
         synced = synchronize_robot_onto_gaze(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy)
@@ -2319,6 +2965,12 @@ def build_joint_feature_bank(
 
     def _fraction_gaze_ahead(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Fraction of (moving) samples where the lookahead distance (see
+        lookahead_distance_series) is positive, i.e. gaze sits ahead of the
+        hand along its heading.
+
+        -> float in [0, 1].
+        """
         lookahead = lookahead_distance_series(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy)
         valid_lookahead = lookahead[np.isfinite(lookahead)]
@@ -2329,6 +2981,12 @@ def build_joint_feature_bank(
 
     def _lookahead_distance_over_speed(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Lookahead distance divided by hand speed at each (moving)
+        sample, then averaged -- a lookahead DISTANCE normalized into a
+        lookahead TIME.
+
+        -> float [s].
+        """
         MINIMUM_SPEED_M_S = 0.005
         synced = synchronize_robot_onto_gaze(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy)
@@ -2342,6 +3000,12 @@ def build_joint_feature_bank(
 
     def _lookahead_times_curvature(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy):
+        """Mean of (lookahead distance x signed curvature) -- captures
+        whether gaze looks further ahead specifically when the upcoming path
+        is more curved.
+
+        -> float, unitless.
+        """
         synced = synchronize_robot_onto_gaze(
             Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy)
         lookahead = lookahead_distance_series(

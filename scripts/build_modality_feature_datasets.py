@@ -81,7 +81,7 @@ CALIBRATION_DIRECTORY = DATA_DIRECTORY / "calibrations"
 # -------------------- User Settings --------------------
 # TODO which labeled dataset to build from -- a key of DATASET_REGISTRY
 # below ("chen_otsu" or "fixed_pilot").
-dataset_name = "chen_otsu"
+dataset_name = "chen_manual"
 
 # TODO which modality tables to build and write, any of "robot",
 # "gaze", "joint". Read the docstring's CIRCULARITY WARNING before
@@ -133,9 +133,9 @@ write_paths = {
     },
 }
 
-# --- Windowing (matches KD_test/python/build_feature_dataset.py) ---
+# --- Windowing ---
 window_size_s = 0.5
-window_step_s = 0.5
+window_step_s = 0.5  # overlap_fraction = 1 - (window_step_s / window_size_s)
 minimum_gaze_samples = 6
 minimum_robot_samples = 10
 
@@ -144,7 +144,7 @@ minimum_robot_samples = 10
 # the pilot set's long scripted blocks; Otsu labels flip far more often
 # (median segment 3.5 s, 36% shorter than 3 s), where 1.5 kept only ~38%
 # of samples on average and 5% on the worst trial.
-transition_margin_s = 0.25
+transition_margin_s = 0.5
 edge_trim_s = 1.5
 
 # --- Calibrated Tobii-UCS -> CoppeliaSim gaze mapping ---
@@ -195,6 +195,24 @@ DATASET_REGISTRY = {
             r"(?P<direction>counter_clockwise|clockwise)"
             r"_s(?P<subject>\d+)\.csv$"),
         gaze_name=("tobii_chen_var_adm_2d_otsu_labeled_{bandwidth}_{shape}"
+                   "_shape_{direction}_s{subject}.csv"),
+        calibration_name=("tobii_coppelia_reference_calibration_{bandwidth}"
+                          "_{shape}_shape_{direction}_s{subject}.json"),
+        condition_fields=("bandwidth", "shape", "direction"),
+    ),
+    # Hand-labeled via manual_label_chen_var_adm_2d_by_live_replay.py.
+    # Same trial-token/condition-field shape as chen_otsu (only the
+    # "_live_labeled_" segment differs), so no other code here needed
+    # to change -- discover_trials() is already generic over this dict.
+    "chen_manual": dict(
+        robot_directory=PROCESSED_DATA_DIRECTORY,
+        robot_glob="ur5e_chen_var_adm_2d_live_labeled_*.csv",
+        robot_pattern=re.compile(
+            r"^ur5e_chen_var_adm_2d_live_labeled_"
+            r"(?P<bandwidth>wide|narrow)_(?P<shape>.+)_shape_"
+            r"(?P<direction>counter_clockwise|clockwise)"
+            r"_s(?P<subject>\d+)\.csv$"),
+        gaze_name=("tobii_chen_var_adm_2d_live_labeled_{bandwidth}_{shape}"
                    "_shape_{direction}_s{subject}.csv"),
         calibration_name=("tobii_coppelia_reference_calibration_{bandwidth}"
                           "_{shape}_shape_{direction}_s{subject}.json"),
