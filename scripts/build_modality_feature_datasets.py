@@ -135,8 +135,8 @@ write_paths = {
 }
 
 # --- Windowing ---
-window_size_s = 0.5
-window_step_s = 0.5  # overlap_fraction = 1 - (window_step_s / window_size_s)
+window_size_s = 1.0
+window_step_s = 1.0  # overlap_fraction = 1 - (window_step_s / window_size_s)
 minimum_gaze_samples = 6
 minimum_robot_samples = 10
 
