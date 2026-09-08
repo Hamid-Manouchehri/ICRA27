@@ -46,6 +46,7 @@ Dependencies: numpy, pandas, scikit-learn, matplotlib
   pip install numpy pandas scikit-learn matplotlib
 """
 
+import time
 from pathlib import Path
 
 import matplotlib
@@ -207,6 +208,7 @@ def plot_loso_results(
 
 
 def main() -> None:
+    start_time_s = time.perf_counter()
     pooled_rows = [
         run_loso_for_modality(modality) for modality in modality_csv_paths]
     summary_table = pd.DataFrame(pooled_rows)
@@ -231,6 +233,9 @@ def main() -> None:
         print(f"\n({full_metrics_path.name} not found -- run "
               f"train_modality_classifiers.py for a pooled-split "
               f"comparison too.)")
+
+    elapsed_s = time.perf_counter() - start_time_s
+    print(f"\nTotal time: {elapsed_s:.1f} s ({elapsed_s / 60.0:.1f} min)")
 
 
 if __name__ == "__main__":

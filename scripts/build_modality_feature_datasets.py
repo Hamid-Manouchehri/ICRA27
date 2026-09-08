@@ -63,6 +63,7 @@ Dependencies: numpy, pandas, scikit-learn
 import hashlib
 import json
 import re
+import time
 from pathlib import Path
 
 import numpy as np
@@ -727,6 +728,7 @@ def write_cached_trial(
 
 
 def main() -> None:
+    start_time_s = time.perf_counter()
     print(f"Dataset: {dataset_name}   modalities: "
           f"{', '.join(modalities_to_build)}\n")
     trials = discover_trials()
@@ -789,6 +791,9 @@ def main() -> None:
             counts = table["trial_class_label"].value_counts()
             counts_text = ", ".join(f"{k}={v}" for k, v in counts.items())
             print(f"  {split_name}: {counts_text}")
+
+    elapsed_s = time.perf_counter() - start_time_s
+    print(f"\nTotal time: {elapsed_s:.1f} s ({elapsed_s / 60.0:.1f} min)")
 
 
 if __name__ == "__main__":
