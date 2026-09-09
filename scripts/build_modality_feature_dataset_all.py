@@ -1,27 +1,26 @@
 """build_modality_feature_dataset_all.py -- Same trial discovery,
 calibration, and windowing as build_modality_feature_datasets.py, but
-computes ALL THREE feature banks (gaze + robot + joint, 249 features
-total) for every window and writes ONE combined train CSV and ONE
-combined test CSV, instead of splitting into six per-modality files.
+computes all three feature banks together per window and writes ONE
+combined train/test CSV pair instead of six per-modality files. Column
+names prefixed by bank ("gaze_"/"robot_"/"joint_") -- a few names
+repeat across banks with different bodies.
 
-Column names are prefixed by bank ("gaze_", "robot_", "joint_") because
-a few names repeat across banks with different bodies (e.g.
-"mean_relative_x" -- see classifier_feature_bank.build_all_feature_
-banks's docstring); DSJ/mean_ee_speed_m_s (robot-only outcome columns,
-not part of any bank) get "robot_" too, for the same reason.
+Inputs:
+- robot + tobii trial CSVs and calibration JSON, per DATASET_REGISTRY
+  [dataset_name] (data/raw_data/ or data/processed_data/, and
+  data/calibrations/)
 
-A window's validity gate (label clean, outside transition_margin_s,
-outside the edge-trimmed span, enough samples) is unchanged from
-build_modality_feature_datasets.py -- every window here already needed
-both gaze and robot data anyway, since all three banks are always
-computed together.
+Outputs:
+- data/processed_data/features_all_{train,test}_<dataset_name>.csv
+- data/processed_data/feature_cache/<dataset_name>_all_<fingerprint>/
+  (per-trial cache)
+- data/json/build_modality_feature_dataset_all_<timestamp>.json (run
+  manifest)
 
-DATASETS / CIRCULARITY WARNING: see build_modality_feature_datasets.py's
-own docstring -- dataset_name/DATASET_REGISTRY and the chen_otsu force/
-damping circularity note both apply unchanged here.
-
-Dependencies: numpy, pandas, scikit-learn
-  pip install numpy pandas scikit-learn
+Depends on:
+- classifier_feature_bank.py
+- build_modality_feature_datasets.py (same DATASET_REGISTRY; the
+  chen_otsu force/damping circularity note there applies here too)
 """
 
 import hashlib
@@ -37,11 +36,13 @@ from sklearn.model_selection import train_test_split
 import classifier_feature_bank as cfb
 
 SCRIPT_DIRECTORY = Path(__file__).resolve().parent
+SCRIPT_NAME = Path(__file__).stem
 PROJECT_ROOT = SCRIPT_DIRECTORY.parent
 DATA_DIRECTORY = PROJECT_ROOT / "data"
 RAW_DATA_DIRECTORY = DATA_DIRECTORY / "raw_data"
 PROCESSED_DATA_DIRECTORY = DATA_DIRECTORY / "processed_data"
 CALIBRATION_DIRECTORY = DATA_DIRECTORY / "calibrations"
+JSON_DIRECTORY = DATA_DIRECTORY / "json"
 
 # -------------------- User Settings --------------------
 # TODO which labeled dataset to build from -- a key of DATASET_REGISTRY
@@ -377,7 +378,7 @@ def compute_robot_sample_is_clean(
 
 # ======================================================================
 # Stage 3: windows -> ONE combined row per window (all three banks,
-# column names prefixed by bank -- see module docstring).
+# column names prefixed by bank -- "gaze_"/"robot_"/"joint_").
 # ======================================================================
 
 def build_windows(streams: dict, trial: dict) -> pd.DataFrame:
@@ -591,9 +592,23 @@ def write_cached_trial(
         table.to_csv(cached_trial_path(cache_directory, trial), index=False)
 
 
+def save_run_manifest(manifest: dict) -> None:
+    JSON_DIRECTORY.mkdir(parents=True, exist_ok=True)
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    path = JSON_DIRECTORY / f"{SCRIPT_NAME}_{timestamp}.json"
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2)
+    print(f"Output: {path}")
+
+
 def main() -> None:
     start_time_s = time.perf_counter()
-    print(f"Dataset: {dataset_name}   modalities: all (gaze+robot+joint)\n")
+    dataset = DATASET_REGISTRY[dataset_name]
+    print(f"Input:  {dataset['robot_directory']}/{dataset['robot_glob']} "
+          f"(+ matching gaze CSVs and calibration JSON)")
+    print(f"Output: {write_train_path}")
+    print(f"Output: {write_test_path}")
+    print(f"\nDataset: {dataset_name}   modalities: all (gaze+robot+joint)\n")
     trials = discover_trials()
     print(f"Discovered {len(trials)} trials.\n")
     if not trials:
@@ -641,6 +656,25 @@ def main() -> None:
 
     elapsed_s = time.perf_counter() - start_time_s
     print(f"\nTotal time: {elapsed_s:.1f} s ({elapsed_s / 60.0:.1f} min)")
+
+    save_run_manifest({
+        "script": SCRIPT_NAME,
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "dataset": dataset_name,
+        "trial_count": len(trials),
+        "window_count": len(feature_table),
+        "column_count": len(feature_table.columns),
+        "window_size_s": window_size_s,
+        "window_step_s": window_step_s,
+        "minimum_gaze_samples": minimum_gaze_samples,
+        "minimum_robot_samples": minimum_robot_samples,
+        "transition_margin_s": transition_margin_s,
+        "edge_trim_s": edge_trim_s,
+        "train_fraction_of_smallest_class": train_fraction_of_smallest_class,
+        "random_seed": random_seed,
+        "elapsed_s": round(elapsed_s, 1),
+        "outputs": {"train": str(write_train_path), "test": str(write_test_path)},
+    })
 
 
 if __name__ == "__main__":

@@ -1,63 +1,22 @@
-"""build_modality_feature_datasets.py -- Windowed feature datasets for
-the Fine/Gross classifier, built SEPARATELY per modality (robot-only,
-gaze-only, joint) from every trial in KD_test/data/raw_data, using
-classifier_feature_bank.py's three feature banks directly (no
-recomputing 249 features and subsetting columns afterward -- each
-modality computes only its own features per window).
+"""build_modality_feature_datasets.py -- Build windowed features for
+the Fine/Gross classifier, separately per modality (robot/gaze/joint),
+from raw robot + gaze trial CSVs.
 
-Same trial discovery, calibrated gaze mapping, and window/label/
-transition/edge-trim logic as KD_test/python/build_feature_dataset.py
-(3 shapes x 3 dampings x subjects s2-s5; random_shape has no s3
-recording -- a missing design cell, not an error). See that script's
-own header for the full reasoning behind each setting below; only
-what's new here is called out.
+Inputs:
+- robot + tobii trial CSVs and calibration JSON, per DATASET_REGISTRY
+  [dataset_name] (data/raw_data/ or data/processed_data/, and
+  data/calibrations/)
 
-What's new/different from the KD_test single-modality version:
-  - A window's validity (label clean, outside transition_margin_s,
-    outside the edge-trimmed span, enough samples) is decided ONCE per
-    window and required to hold for BOTH gaze and robot data, even for
-    the robot-only modality (which doesn't itself need gaze) -- so all
-    three modalities are evaluated on the EXACT SAME set of windows.
-    Letting robot-only use a more permissive window set (since it
-    doesn't technically need valid gaze) would give it strictly more
-    training data than gaze/joint, and any accuracy difference later
-    could then be "more data" instead of "the feature content" -- the
-    same reasoning root as the earlier robot_only-vs-joint fairness
-    discussion, applied one level up (window count, not feature count).
-  - The train/test split is decided ONCE (by window identity) and
-    applied identically to all three modality tables, so "window i" is
-    train (or test) the same way in every modality's CSV -- necessary
-    for compare_modality_classifiers.py's comparison to mean anything;
-    without it, differences could partly reflect different windows
-    being evaluated, not different feature content.
-  - Output is six CSVs (train/test x robot/gaze/joint), not two.
+Outputs:
+- data/processed_data/features_{robot,gaze,joint}_{train,test}_
+  <dataset_name>.csv (6 files)
+- data/processed_data/feature_cache/<dataset_name>_<fingerprint>/
+  (per-trial cache)
+- data/json/build_modality_feature_datasets_<timestamp>.json (run
+  manifest)
 
-DATASETS: dataset_name selects which labeled trials to build from, via
-DATASET_REGISTRY below. Two are defined:
-  - "fixed_pilot": the original hand-labeled pilot trials in raw_data/
-    (shape x damping x subject), the dataset every earlier result used.
-  - "chen_otsu": the Otsu-labeled Chen trials written to
-    processed_data/ by compare_chen_otsu_labeling_across_subjects.m
-    (bandwidth x shape x direction x subject).
-Each entry carries its own filename pattern and its own CONDITION
-fields, which become the per-window metadata columns -- so the pilot
-set keeps shape/damping_n_s_m and the Chen set gets bandwidth/shape/
-direction instead. Both are excluded from every feature matrix.
-
-CIRCULARITY WARNING for "chen_otsu": that label is thresholded smoothed
-bd_applied_Ns_m, and ur5e_chen_var_adm_2d.py's compute_direct_damping()
-makes bd_applied a deterministic linear function of filtered force
-magnitude alone (200 N s/m at |F| <= 1 N down to 10 N s/m at |F| >=
-11 N). Measured on these trials, smoothed damping and smoothed |F|
-correlate at -0.99, and a plain force threshold reproduces the Otsu
-label 94-98% of the time. A robot or joint classifier trained on it is
-therefore largely re-deriving the controller's own equation, and its
-accuracy says nothing about behaviour. The gaze bank shares no input
-with the label, so gaze-only is the honest experiment -- hence the
-default modalities_to_build below.
-
-Dependencies: numpy, pandas, scikit-learn
-  pip install numpy pandas scikit-learn
+Depends on:
+- classifier_feature_bank.py
 """
 
 import hashlib
@@ -73,22 +32,22 @@ from sklearn.model_selection import train_test_split
 import classifier_feature_bank as cfb
 
 SCRIPT_DIRECTORY = Path(__file__).resolve().parent
+SCRIPT_NAME = Path(__file__).stem
 PROJECT_ROOT = SCRIPT_DIRECTORY.parent
 DATA_DIRECTORY = PROJECT_ROOT / "data"
 RAW_DATA_DIRECTORY = DATA_DIRECTORY / "raw_data"
 PROCESSED_DATA_DIRECTORY = DATA_DIRECTORY / "processed_data"
 CALIBRATION_DIRECTORY = DATA_DIRECTORY / "calibrations"
+JSON_DIRECTORY = DATA_DIRECTORY / "json"
 
 # -------------------- User Settings --------------------
 # TODO which labeled dataset to build from -- a key of DATASET_REGISTRY
 # below ("chen_otsu" or "fixed_pilot").
 dataset_name = "chen_manual"
 
-# TODO which modality tables to build and write, any of "robot",
-# "gaze", "joint". Read the docstring's CIRCULARITY WARNING before
-# interpreting robot or joint numbers on an Otsu-labeled dataset --
-# they are built here to quantify gaze's marginal contribution, not as
-# standalone results.
+# TODO which modality tables to build/write: "robot"|"gaze"|"joint".
+# CIRCULARITY on chen_otsu: robot/joint label is thresholded damping, a
+# deterministic function of force -- gaze-only is the honest test there.
 modalities_to_build = ("robot", "gaze", "joint")
 
 # TODO robot CSV stems (filename, no extension) to skip regardless of
@@ -171,7 +130,7 @@ random_seed = 42
 # Same logic as KD_test/python/build_feature_dataset.py's
 # discover_trials(), generalized over DATASET_REGISTRY so the pilot and
 # Chen datasets differ only by their filename patterns and condition
-# fields -- see the module docstring's DATASETS section.
+# fields -- own filename pattern + condition fields per dataset.
 # ======================================================================
 
 DATASET_REGISTRY = {
@@ -461,8 +420,8 @@ def compute_robot_sample_is_clean(
 
 # ======================================================================
 # Stage 3: windows -> features, for one trial, computed for all three
-# modalities at once (same kept-window decision shared across them --
-# see module docstring for why).
+# modalities at once (same kept-window decision shared across them, so
+# robot-only can't get more windows than gaze/joint).
 # ======================================================================
 
 def build_windows(streams: dict, trial: dict, modalities) -> dict:
@@ -500,7 +459,7 @@ def build_windows(streams: dict, trial: dict, modalities) -> dict:
     # Only the requested modalities' banks are built, but the window
     # validity gates below still require BOTH gaze and robot data, so a
     # gaze-only run evaluates the exact same windows a three-modality
-    # run would -- see the module docstring.
+    # run would.
     robot_bank = (cfb.build_robot_feature_bank(config)
                   if "robot" in modalities else [])
     gaze_bank = (cfb.build_gaze_feature_bank(config)
@@ -529,7 +488,7 @@ def build_windows(streams: dict, trial: dict, modalities) -> dict:
         robot_count = int(np.count_nonzero(robot_in_window))
         gaze_count = int(np.count_nonzero(gaze_in_window))
         # Both gaze and robot sample-count/validity gates apply to
-        # EVERY modality, including robot-only -- see module docstring.
+        # EVERY modality, including robot-only.
         if robot_count < minimum_robot_samples or \
                 gaze_count < minimum_gaze_samples:
             excluded_too_few_samples += 1
@@ -605,7 +564,7 @@ def build_windows(streams: dict, trial: dict, modalities) -> dict:
 # ======================================================================
 # Stage 4: class-balanced train / uneven-by-design test split, decided
 # ONCE by window identity and applied identically to all three modality
-# tables -- see module docstring for why.
+# tables (so "window i" is train/test the same way in every CSV).
 # ======================================================================
 
 def split_train_test_balanced(feature_tables: dict) -> dict:
@@ -727,9 +686,24 @@ def write_cached_trial(
             cached_trial_path(cache_directory, trial, modality), index=False)
 
 
+def save_run_manifest(manifest: dict) -> None:
+    JSON_DIRECTORY.mkdir(parents=True, exist_ok=True)
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    path = JSON_DIRECTORY / f"{SCRIPT_NAME}_{timestamp}.json"
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2)
+    print(f"Output: {path}")
+
+
 def main() -> None:
     start_time_s = time.perf_counter()
-    print(f"Dataset: {dataset_name}   modalities: "
+    dataset = DATASET_REGISTRY[dataset_name]
+    print(f"Input:  {dataset['robot_directory']}/{dataset['robot_glob']} "
+          f"(+ matching gaze CSVs and calibration JSON)")
+    for modality in modalities_to_build:
+        print(f"Output: {write_paths[modality]['train']}")
+        print(f"Output: {write_paths[modality]['test']}")
+    print(f"\nDataset: {dataset_name}   modalities: "
           f"{', '.join(modalities_to_build)}\n")
     trials = discover_trials()
     print(f"Discovered {len(trials)} trials.\n")
@@ -794,6 +768,29 @@ def main() -> None:
 
     elapsed_s = time.perf_counter() - start_time_s
     print(f"\nTotal time: {elapsed_s:.1f} s ({elapsed_s / 60.0:.1f} min)")
+
+    save_run_manifest({
+        "script": SCRIPT_NAME,
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "dataset": dataset_name,
+        "modalities_built": list(modalities_to_build),
+        "trial_count": len(trials),
+        "pooled_window_count": pooled_window_count,
+        "window_size_s": window_size_s,
+        "window_step_s": window_step_s,
+        "minimum_gaze_samples": minimum_gaze_samples,
+        "minimum_robot_samples": minimum_robot_samples,
+        "transition_margin_s": transition_margin_s,
+        "edge_trim_s": edge_trim_s,
+        "train_fraction_of_smallest_class": train_fraction_of_smallest_class,
+        "random_seed": random_seed,
+        "elapsed_s": round(elapsed_s, 1),
+        "outputs": {
+            modality: {"train": str(write_paths[modality]["train"]),
+                       "test": str(write_paths[modality]["test"])}
+            for modality in modalities_to_build
+        },
+    })
 
 
 if __name__ == "__main__":

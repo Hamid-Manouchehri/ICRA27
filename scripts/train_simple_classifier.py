@@ -1,40 +1,28 @@
-"""train_simple_classifier.py -- Train one classifier on one modality,
-picking exactly which features go in. Standalone -- not imported by,
-and can't break, the other training/comparison scripts.
+"""train_simple_classifier.py -- Train one Random Forest on a chosen
+modality's features, with manual feature include/exclude, either a
+pooled train/test split or leave-one-subject-out (LOSO).
 
-Reads features_<modality>_{train,test}_<dataset_name>.csv (written by
-build_modality_feature_datasets.py). To pick features: set
-list_available_features_and_exit = True and run once to print all
-feature names, then fill in features_to_exclude or features_to_include
-below and rerun.
+Inputs:
+- features_<modality>_{train,test}_<dataset_name>.csv
+- features_<extra_modality>_{train,test}_<dataset_name>.csv (optional,
+  only if extra_modality is set)
 
-extra_modality + extra_features_to_include pull specific named columns
-from ANOTHER modality's CSV (e.g. a joint feature into the robot run),
-merged onto the same windows by trial+window identity -- both CSVs
-share the exact same windows by construction.
+Outputs:
+- data/images/simple_confusion_matrix_<modality>_<dataset_name>
+  [_loso][_<output_tag>].png
+- data/images/simple_feature_importance_<modality>_<dataset_name>
+  [_loso][_<output_tag>].png
+- data/images/simple_accuracy_by_subject_<modality>_<dataset_name>
+  [_loso][_<output_tag>].png (LOSO only)
+- data/json/train_simple_classifier_<timestamp>.json (run manifest)
+- printed classification report
 
-use_loso = True switches from the pooled train/test split to leave-
-one-subject-out: hold out each subject in turn, train (balanced) on
-the rest, test on them, then pool every fold's predictions -- the
-honest "new person" evaluation, same method as train_modality_
-classifiers_loso.py.
-
-lead_window_steps (LOSO only) re-pairs each window's features with the
-label N windows LATER in the same trial -- features stay at window i,
-predicting an upcoming window's label instead of its own. Same
-technique as compare_loso_feature_sets.py's shift_labels_forward; only
-safe under LOSO, since the pooled split can put a window and its
-future label on opposite sides of train/test.
-
-Output: a printed classification report, plus confusion-matrix and
-feature-importance PNGs (LOSO also writes an accuracy-by-subject bar
-chart) under data/images/simple_*_<modality>_<dataset_name>
-[_loso][_<output_tag>].png
-
-Dependencies: numpy, pandas, scikit-learn, matplotlib
-  pip install numpy pandas scikit-learn matplotlib
+Depends on:
+- build_modality_feature_datasets.py (writes robot/gaze/joint CSVs)
+- build_modality_feature_dataset_all.py (writes the "all" CSV)
 """
 
+import json
 import time
 from pathlib import Path
 
@@ -47,15 +35,17 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import ConfusionMatrixDisplay, classification_report
 
 SCRIPT_DIRECTORY = Path(__file__).resolve().parent
+SCRIPT_NAME = Path(__file__).stem
 PROJECT_ROOT = SCRIPT_DIRECTORY.parent
 DATA_DIRECTORY = PROJECT_ROOT / "data"
 PROCESSED_DATA_DIRECTORY = DATA_DIRECTORY / "processed_data"
 IMAGE_DATA_DIRECTORY = DATA_DIRECTORY / "images"
+JSON_DIRECTORY = DATA_DIRECTORY / "json"
 
 # -------------------- User Settings --------------------
 modality = "robot"  # TODO "robot" | "gaze" | "joint"
 dataset_name = "chen_manual"  # TODO must match build_modality_feature_datasets.py
-output_tag = "top10"  # TODO appended to output filenames
+output_tag = "130pm"  # TODO appended to output filenames
 
 extra_modality = "None"  # TODO "robot" | "gaze" | "joint" | None
 extra_features_to_include = [
@@ -82,22 +72,22 @@ window_step_s = 1  # TODO must match build_modality_feature_datasets.py; only fo
 # TODO dropped from "use everything"; ignored if features_to_include is set.
 features_to_exclude = [
     # positional (correlates with shape geometry, not behaviour)
-    "mean_position_x", "mean_position_y", "std_position_x", "std_position_y",
-    "variance_position_x", "variance_position_y", "minimum_position_x",
-    "maximum_position_x", "range_position_x", "minimum_position_y",
-    "maximum_position_y", "range_position_y", "median_position_x",
-    "median_position_y", "iqr_position_x", "iqr_position_y",
-    "mad_position_x", "mad_position_y", "skewness_position_x",
-    "skewness_position_y", "kurtosis_position_x", "kurtosis_position_y",
-    "covariance_position_xy", "correlation_position_xy",
-    "position_dispersion_rms", "position_bcea_68",
-    "position_x_shannon_entropy", "position_y_shannon_entropy",
-    "position_x_mean_crossing_count", "position_y_mean_crossing_count",
-    "position_x_lag1_autocorrelation", "position_y_lag1_autocorrelation",
-    # force (DAMPING-CONFOUNDED -- see classifier_feature_bank.py docstring)
-    "mean_force_magnitude", "std_force_magnitude", "max_force_magnitude",
-    "median_force_magnitude", "rms_force_magnitude", "mean_force_x",
-    "mean_force_y", "std_force_x", "std_force_y",
+    # "mean_position_x", "mean_position_y", "std_position_x", "std_position_y",
+    # "variance_position_x", "variance_position_y", "minimum_position_x",
+    # "maximum_position_x", "range_position_x", "minimum_position_y",
+    # "maximum_position_y", "range_position_y", "median_position_x",
+    # "median_position_y", "iqr_position_x", "iqr_position_y",
+    # "mad_position_x", "mad_position_y", "skewness_position_x",
+    # "skewness_position_y", "kurtosis_position_x", "kurtosis_position_y",
+    # "covariance_position_xy", "correlation_position_xy",
+    # "position_dispersion_rms", "position_bcea_68",
+    # "position_x_shannon_entropy", "position_y_shannon_entropy",
+    # "position_x_mean_crossing_count", "position_y_mean_crossing_count",
+    # "position_x_lag1_autocorrelation", "position_y_lag1_autocorrelation",
+    # # force (DAMPING-CONFOUNDED -- see classifier_feature_bank.py docstring)
+    # "mean_force_magnitude", "std_force_magnitude", "max_force_magnitude",
+    # "median_force_magnitude", "rms_force_magnitude", "mean_force_x",
+    # "mean_force_y", "std_force_x", "std_force_y",
 ]
 
 # TODO if non-empty, ONLY these are used (overrides features_to_exclude).
@@ -111,7 +101,7 @@ features_to_include = [
 n_estimators = 300
 random_seed = 42
 
-top_n_features_to_plot = 10  # TODO for the importance bar chart
+top_n_features_to_plot = 100  # TODO for the importance bar chart
 # -------------------- End User Settings --------------------
 
 read_train_path = (PROCESSED_DATA_DIRECTORY /
@@ -194,6 +184,15 @@ def select_feature_columns(all_features: list) -> list:
     if unknown:
         raise ValueError(f"features_to_exclude has unknown names: {unknown}")
     return [f for f in all_features if f not in features_to_exclude]
+
+
+def save_run_manifest(manifest: dict) -> None:
+    JSON_DIRECTORY.mkdir(parents=True, exist_ok=True)
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    path = JSON_DIRECTORY / f"{SCRIPT_NAME}_{timestamp}.json"
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2)
+    print(f"Output: {path}")
 
 
 def fit_model(X, y) -> RandomForestClassifier:
@@ -365,6 +364,18 @@ def run_loso(pooled_table: pd.DataFrame, feature_columns: list) -> None:
 def main() -> None:
     start_time_s = time.perf_counter()
 
+    print(f"Input:  {read_train_path}")
+    print(f"Input:  {read_test_path}")
+    if extra_modality and extra_features_to_include:
+        print(f"Input:  features_{extra_modality}_{{train,test}}_"
+              f"{dataset_name}.csv (extra columns: "
+              f"{', '.join(extra_features_to_include)})")
+    print(f"Output: {write_confusion_matrix_path}")
+    print(f"Output: {write_feature_importance_path}")
+    if use_loso:
+        print(f"Output: {write_accuracy_by_subject_path}")
+    print()
+
     if lead_window_steps and not use_loso:
         raise ValueError(
             "lead_window_steps requires use_loso = True -- the pooled "
@@ -385,6 +396,26 @@ def main() -> None:
     feature_columns = select_feature_columns(all_features)
     print(f"Using {len(feature_columns)} of {len(all_features)} available "
           f"features ({len(all_features) - len(feature_columns)} excluded).")
+
+    save_run_manifest({
+        "script": SCRIPT_NAME,
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "dataset": dataset_name,
+        "modality": modality,
+        "train_file": read_train_path.name,
+        "test_file": read_test_path.name,
+        "extra_modality": extra_modality if extra_features_to_include else None,
+        "extra_features": list(extra_features_to_include),
+        "features": feature_columns,
+        "n_features": len(feature_columns),
+        "classifier": "RandomForest",
+        "n_estimators": n_estimators,
+        "use_loso": use_loso,
+        "lead_window_steps": lead_window_steps if use_loso else None,
+        "window_step_s": window_step_s,
+        "random_seed": random_seed,
+        "output_tag": output_tag or None,
+    })
 
     IMAGE_DATA_DIRECTORY.mkdir(parents=True, exist_ok=True)
 

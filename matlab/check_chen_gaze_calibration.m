@@ -40,6 +40,13 @@ moving_speed_threshold_m_s = 0.005;  % for the along/perp decomposition
 outlier_abs_threshold_mm = 10;  % flag if |dx-median| or |dy-median| exceeds this
 outlier_mad_multiple = 5;       % or exceeds this many group MADs
 
+%% Report I/O before doing anything
+fprintf('Input:  %s\n', fullfile(raw_data_directory, 'ur5e_chen_var_adm_2d_*.csv'));
+fprintf('Input:  %s\n', fullfile(raw_data_directory, 'tobii_chen_var_adm_2d_*.csv'));
+fprintf('Input:  %s\n', ...
+    fullfile(calibration_directory, 'tobii_coppelia_reference_calibration_*.json'));
+fprintf('Output: none written to disk (printed report + one figure only)\n\n');
+
 %% Coverage check -- every robot CSV found, gaze + calibration required
 robot_csv_listing = dir(fullfile(raw_data_directory, 'ur5e_chen_var_adm_2d_*.csv'));
 missing_gaze = {};
