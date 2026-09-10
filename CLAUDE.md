@@ -31,7 +31,9 @@ precedence over generic defaults. The most load-bearing rules from it:
   to the limit; only split onto continuation lines when it would overflow —
   don't force one-argument-per-line).
 - `data/raw_data/` must not be modified or overwritten by anything other
-  than the controller script that produced it.
+  than the controller script that produced it. This means Claude must
+  NEVER touch it — no edits, no overwrites, no deletes, no moves, not
+  even as a side effect of another change. Read-only access is fine.
 - Changing a script's `write_csv_header`/`write_csv_row` columns is a schema
   change: every downstream MATLAB script that reads that CSV (see the data
   flow below) needs matching updates, or it fails with "unrecognized table

@@ -45,7 +45,7 @@ JSON_DIRECTORY = DATA_DIRECTORY / "json"
 # -------------------- User Settings --------------------
 modality = "robot"  # TODO "robot" | "gaze" | "joint"
 dataset_name = "chen_manual"  # TODO must match build_modality_feature_datasets.py
-output_tag = "130pm"  # TODO appended to output filenames
+output_tag = "lead_win_step_0"  # TODO appended to output filenames
 
 extra_modality = "None"  # TODO "robot" | "gaze" | "joint" | None
 extra_features_to_include = [
@@ -66,7 +66,7 @@ list_available_features_and_exit = False  # TODO True to just print feature name
 use_loso = True  # TODO True for leave-one-subject-out instead of the pooled split
 train_fraction_of_smallest_class = 0.5  # TODO LOSO only: balanced-draw fraction
 
-lead_window_steps = 1  # TODO LOSO only: predict the label N windows ahead; 0 = today's behavior
+lead_window_steps = 0  # TODO LOSO only: predict the label N windows ahead (window_step_s second ahead); 0 = today's behavior
 window_step_s = 1  # TODO must match build_modality_feature_datasets.py; only for printing lead time in seconds
 
 # TODO dropped from "use everything"; ignored if features_to_include is set.
