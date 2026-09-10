@@ -18,8 +18,7 @@ Outputs:
 - data/processed_data/feature_ranking_<modality>_<dataset_name>.csv
 
 Depends on:
-- build_modality_feature_datasets.py
-- build_modality_feature_dataset_all.py
+- build_modality_feature_datasets.py (writes robot/gaze/joint/all CSVs)
 """
 
 import time

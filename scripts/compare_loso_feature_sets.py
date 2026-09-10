@@ -1,50 +1,28 @@
-"""compare_loso_feature_sets.py -- Leave-one-subject-out comparison of
-SEVERAL feature sets side by side, to quantify what eye gaze actually
-contributes over robot data alone (improve / worsen / maintain).
+"""compare_loso_feature_sets.py -- LOSO comparison of several feature
+sets side by side (see build_feature_sets), to quantify what gaze
+contributes over robot data alone. "joint" is NOT robot+gaze
+concatenated (zero shared features) -- "robot_plus_gaze"/"all" are the
+real tests of gaze's marginal value. Top-N selection is redone inside
+each fold (never leaks the held-out subject); baseline is each fold's
+own majority-class rate.
 
-Why this script exists rather than reusing the others: train_modality_
-classifiers_top_n.py does top-N but on the POOLED window split, which
-lets the same subject appear in train and test. Only LOSO answers "how
-would this do on a NEW person", so the top-N restriction is redone here
-inside the LOSO loop.
+Inputs:
+- features_{robot,gaze,joint}_{train,test}_<dataset_name>.csv
+- features_all_{train,test}_<dataset_name>.csv
 
-WHAT "JOINT" IS NOT: classifier_feature_bank.py's joint bank is NOT
-robot + gaze concatenated. It shares zero features with the robot bank
--- it is 28 gaze features plus 23 cross-modal ones (gaze offset angle
-vs. force, gaze-EE distance vs. curvature, ...). So "joint vs. robot"
-does not measure gaze's marginal value. The robot_plus_gaze set below
-is the real test: the robot bank's columns and the gaze bank's columns
-concatenated on window identity.
+Outputs:
+- data/processed_data/loso_feature_set_comparison_<dataset_name>.csv
+- data/processed_data/loso_feature_set_folds_<dataset_name>.csv
+- data/images/loso_feature_set_comparison_<dataset_name>.png
+- data/processed_data/loso_lead_time_sweep_<dataset_name>.csv (if
+  lead_time_sweep_s is non-empty)
+- data/processed_data/loso_lead_time_sweep_folds_<dataset_name>.csv
+- data/images/loso_lead_time_sweep_<dataset_name>.png
 
-FEATURE SETS EVALUATED (each under identical 9-fold LOSO):
-  robot            - ur5e_*.csv only (96 features)
-  gaze             - the gaze bank as built (102), 30 of which secretly
-                     also read the robot CSV (see robot_dependent_gaze_
-                     features below)
-  gaze_pure        - only the 72 gaze features that are derived from
-                     tobii_*.csv ALONE -- gaze-only in the strict sense
-  joint            - the cross-modal bank (51)
-  robot_plus_gaze  - robot bank + gaze bank concatenated
-  robot_plus_gaze_pure - robot bank + strictly-Tobii features
-Each is run with ALL of its features and again with only its top N.
-
-TOP-N SELECTION IS DONE INSIDE EACH FOLD, from that fold's TRAINING
-data only. Ranking once on all data and then running LOSO would leak
-the held-out subject into feature selection and inflate the result.
-
-BASELINE: every accuracy is reported against the majority-class rate of
-that fold's own test set, since the classes are not balanced and each
-subject's balance differs.
-
-Inputs:  data/processed_data/features_{robot,gaze,joint}_{train,test}_
-         <dataset_name>.csv, written by
-         build_modality_feature_datasets.py.
-Outputs: data/processed_data/loso_feature_set_comparison_<dataset>.csv
-         data/processed_data/loso_feature_set_folds_<dataset>.csv
-         data/images/loso_feature_set_comparison_<dataset>.png
-
-Dependencies: numpy, pandas, scikit-learn, matplotlib
-  pip install numpy pandas scikit-learn matplotlib
+Depends on:
+- classifier_feature_bank.py
+- train_modality_classifiers.py
+- build_modality_feature_datasets.py (writes robot/gaze/joint/all CSVs)
 """
 
 from pathlib import Path
@@ -82,21 +60,14 @@ run_top_n_variants = True
 
 # TODO lead times [s] for the anticipation sweep: predict the label
 # window_offset steps AHEAD from features at t. Must be multiples of
-# window_step_s (0.5 s), since the offset is applied in window steps.
-# Empty tuple skips the sweep. 0.5 s is omitted deliberately: with
-# transition_margin_s = 0.25 the windows either side of a label flip
-# are already dropped, so every surviving 0.5 s pair has the same label
-# (persistence = 100%) and there is nothing to anticipate. Regimes are
-# only genuinely uncertain from ~1 s out (persistence 92% at 1 s, 68%
-# at 2 s).
-lead_time_sweep_s = (0.0, 1.0, 1.5, 2.0, 2.5, 3.0)
-window_step_s = 0.5
+# window_step_s, since the offset is applied in window steps. Empty
+# tuple skips the sweep.
+lead_time_sweep_s = (0.0, 1.0, 2.0, 3.0, 4.0)
+window_step_s = 1.0  # TODO must match build_modality_feature_datasets.py
 
-# TODO which feature sets enter the lead-time sweep. Gaze vs. robot is
-# the comparison that matters: force already predicts the near-future
-# label well because force is autocorrelated, so gaze only earns a
-# place in the controller if its advantage GROWS with lead time.
-lead_time_feature_sets = ("gaze_pure", "robot")
+# TODO which feature sets enter the lead-time sweep -- any key of
+# build_feature_sets() (e.g. "robot", "all", "gaze_pure", ...).
+lead_time_feature_sets = ("robot", "all")
 
 # Reused from train_modality_classifiers.py so settings live in one place.
 dataset_name = tmc.dataset_name
@@ -167,11 +138,25 @@ def robot_dependent_gaze_features() -> set:
     return robot_dependent
 
 
+def all_modality_table() -> pd.DataFrame:
+    """features_all_{train,test}_<dataset_name>.csv, written by build_
+    modality_feature_dataset_all.py -- gaze+robot+joint (249 features,
+    bank-prefixed) already combined, pooled the same way modality_
+    table() pools the single-modality CSVs."""
+    train_table = pd.read_csv(
+        PROCESSED_DATA_DIRECTORY / f"features_all_train_{dataset_name}.csv")
+    test_table = pd.read_csv(
+        PROCESSED_DATA_DIRECTORY / f"features_all_test_{dataset_name}.csv")
+    return pd.concat([train_table, test_table], ignore_index=True)
+
+
 def build_feature_sets() -> dict:
     """{name: (table, feature_columns)} for every set being compared."""
     robot_table = modality_table("robot")
     gaze_table = modality_table("gaze")
     joint_table = modality_table("joint")
+    all_table = all_modality_table()
+    all_features = feature_columns_of(all_table)
 
     robot_features = feature_columns_of(robot_table)
     gaze_features = feature_columns_of(gaze_table)
@@ -195,7 +180,8 @@ def build_feature_sets() -> dict:
 
     print(f"robot {len(robot_features)} | gaze {len(gaze_features)} "
           f"(pure {len(pure_gaze_features)}) | joint {len(joint_features)} "
-          f"| robot+gaze {len(robot_features) + len(combined_gaze_features)}")
+          f"| robot+gaze {len(robot_features) + len(combined_gaze_features)} "
+          f"| all {len(all_features)}")
     if len(combined_table) != len(robot_table):
         print(f"WARNING: robot/gaze merge kept {len(combined_table)} of "
               f"{len(robot_table)} windows -- window identities differ.")
@@ -209,6 +195,7 @@ def build_feature_sets() -> dict:
             combined_table, robot_features + combined_gaze_features),
         "robot_plus_gaze_pure": (
             combined_table, robot_features + combined_pure_features),
+        "all": (all_table, all_features),
     }
 
 
@@ -412,6 +399,15 @@ def plot_confusion_matrix(
 
 
 def main() -> None:
+    print(f"Input:  features_{{robot,gaze,joint,all}}_{{train,test}}_"
+          f"{dataset_name}.csv")
+    print(f"Output: loso_feature_set_comparison_{dataset_name}.{{csv,png}}")
+    print(f"Output: loso_feature_set_folds_{dataset_name}.csv")
+    if lead_time_sweep_s:
+        print(f"Output: loso_lead_time_sweep_{dataset_name}.{{csv,png}}")
+        print(f"Output: loso_lead_time_sweep_folds_{dataset_name}.csv")
+    print()
+
     feature_sets = build_feature_sets()
     summary_rows, fold_rows = [], []
     IMAGE_DATA_DIRECTORY.mkdir(parents=True, exist_ok=True)

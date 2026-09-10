@@ -18,8 +18,7 @@ Outputs:
 - printed classification report
 
 Depends on:
-- build_modality_feature_datasets.py (writes robot/gaze/joint CSVs)
-- build_modality_feature_dataset_all.py (writes the "all" CSV)
+- build_modality_feature_datasets.py (writes robot/gaze/joint/all CSVs)
 """
 
 import json

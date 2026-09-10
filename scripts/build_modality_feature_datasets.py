@@ -1,5 +1,6 @@
 """build_modality_feature_datasets.py -- Build windowed features for
-the Fine/Gross classifier, separately per modality (robot/gaze/joint),
+the Fine/Gross classifier, per modality (robot/gaze/joint, and "all" --
+all 3 banks combined into one row, column names prefixed by bank),
 from raw robot + gaze trial CSVs.
 
 Inputs:
@@ -8,10 +9,10 @@ Inputs:
   data/calibrations/)
 
 Outputs:
-- data/processed_data/features_{robot,gaze,joint}_{train,test}_
-  <dataset_name>.csv (6 files)
-- data/processed_data/feature_cache/<dataset_name>_<fingerprint>/
-  (per-trial cache)
+- data/processed_data/features_{robot,gaze,joint,all}_{train,test}_
+  <output_dataset_name>.csv (whichever modalities_to_build lists)
+- data/processed_data/feature_cache/<output_dataset_name>_
+  <fingerprint>/ (per-trial cache)
 - data/json/build_modality_feature_datasets_<timestamp>.json (run
   manifest)
 
@@ -45,10 +46,19 @@ JSON_DIRECTORY = DATA_DIRECTORY / "json"
 # below ("chen_otsu" or "fixed_pilot").
 dataset_name = "chen_manual"
 
-# TODO which modality tables to build/write: "robot"|"gaze"|"joint".
-# CIRCULARITY on chen_otsu: robot/joint label is thresholded damping, a
-# deterministic function of force -- gaze-only is the honest test there.
-modalities_to_build = ("robot", "gaze", "joint")
+# TODO output file/cache tag -- change this (not dataset_name) when you
+# change window_size_s/window_step_s below, so the new run doesn't
+# overwrite today's CSVs. Downstream scripts just set THEIR dataset_name
+# to this same string to read the tagged files; no code changes needed.
+output_dataset_name = "W_2s"
+
+# TODO which modality tables to build/write: "robot"|"gaze"|"joint"|
+# "all" (all 3 banks combined into one row, column names prefixed by
+# bank -- "gaze_"/"robot_"/"joint_"; a few names repeat across banks
+# with different bodies). CIRCULARITY on chen_otsu: robot/joint label
+# is thresholded damping, a deterministic function of force -- gaze-
+# only is the honest test there.
+modalities_to_build = ("robot", "gaze", "joint", "all")
 
 # TODO robot CSV stems (filename, no extension) to skip regardless of
 # dataset -- trials flagged as unreliable during the calibration audit
@@ -68,34 +78,41 @@ use_trial_cache = True
 
 valid_class_labels = ("Fine", "Gross")
 
-# Output names carry dataset_name so two datasets' feature tables can
-# coexist instead of one silently overwriting the other. The original
-# pilot run predates this and left unsuffixed features_*_{train,test}
-# .csv files; rename those to *_fixed_pilot.csv to reuse them here.
+# Output names carry output_dataset_name so different runs (datasets,
+# or window settings -- see output_dataset_name above) can coexist
+# instead of one silently overwriting the other. The original pilot run
+# predates this and left unsuffixed features_*_{train,test}.csv files;
+# rename those to *_fixed_pilot.csv to reuse them here.
 write_paths = {
     "robot": {
         "train": PROCESSED_DATA_DIRECTORY /
-                 f"features_robot_train_{dataset_name}.csv",
+                 f"features_robot_train_{output_dataset_name}.csv",
         "test": PROCESSED_DATA_DIRECTORY /
-                f"features_robot_test_{dataset_name}.csv",
+                f"features_robot_test_{output_dataset_name}.csv",
     },
     "gaze": {
         "train": PROCESSED_DATA_DIRECTORY /
-                 f"features_gaze_train_{dataset_name}.csv",
+                 f"features_gaze_train_{output_dataset_name}.csv",
         "test": PROCESSED_DATA_DIRECTORY /
-                f"features_gaze_test_{dataset_name}.csv",
+                f"features_gaze_test_{output_dataset_name}.csv",
     },
     "joint": {
         "train": PROCESSED_DATA_DIRECTORY /
-                 f"features_joint_train_{dataset_name}.csv",
+                 f"features_joint_train_{output_dataset_name}.csv",
         "test": PROCESSED_DATA_DIRECTORY /
-                f"features_joint_test_{dataset_name}.csv",
+                f"features_joint_test_{output_dataset_name}.csv",
+    },
+    "all": {
+        "train": PROCESSED_DATA_DIRECTORY /
+                 f"features_all_train_{output_dataset_name}.csv",
+        "test": PROCESSED_DATA_DIRECTORY /
+                f"features_all_test_{output_dataset_name}.csv",
     },
 }
 
 # --- Windowing ---
-window_size_s = 1.0
-window_step_s = 1.0  # overlap_fraction = 1 - (window_step_s / window_size_s)
+window_size_s = 2.0
+window_step_s = 2.0  # overlap_fraction = 1 - (window_step_s / window_size_s)
 minimum_gaze_samples = 6
 minimum_robot_samples = 10
 
@@ -459,13 +476,14 @@ def build_windows(streams: dict, trial: dict, modalities) -> dict:
     # Only the requested modalities' banks are built, but the window
     # validity gates below still require BOTH gaze and robot data, so a
     # gaze-only run evaluates the exact same windows a three-modality
-    # run would.
-    robot_bank = (cfb.build_robot_feature_bank(config)
-                  if "robot" in modalities else [])
-    gaze_bank = (cfb.build_gaze_feature_bank(config)
-                 if "gaze" in modalities else [])
-    joint_bank = (cfb.build_joint_feature_bank(config)
-                  if "joint" in modalities else [])
+    # run would. "all" needs every bank, so a bank is built once (never
+    # twice) whenever its own modality OR "all" is requested.
+    need_robot = "robot" in modalities or "all" in modalities
+    need_gaze = "gaze" in modalities or "all" in modalities
+    need_joint = "joint" in modalities or "all" in modalities
+    robot_bank = cfb.build_robot_feature_bank(config) if need_robot else []
+    gaze_bank = cfb.build_gaze_feature_bank(config) if need_gaze else []
+    joint_bank = cfb.build_joint_feature_bank(config) if need_joint else []
 
     rows = {modality: [] for modality in modalities}
     excluded_too_few_samples = 0
@@ -528,29 +546,46 @@ def build_windows(streams: dict, trial: dict, modalities) -> dict:
             "trial_class_label": window_label,
         }
 
-        if "robot" in modalities:
-            robot_row = dict(metadata)
+        # Each bank's feature VALUES are computed once here regardless of
+        # how many of {that modality, "all"} were requested, then reused
+        # below -- "all" never recomputes what an individual modality
+        # row already computed.
+        robot_features = {}
+        if need_robot:
             for name, feature_fn in robot_bank:
-                robot_row[name] = feature_fn(
+                robot_features[name] = feature_fn(
                     Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy)
-            robot_row["DSJ"] = cfb.calculate_planar_dsj(
+            robot_features["DSJ"] = cfb.calculate_planar_dsj(
                 robot_x_m[robot_in_window], robot_y_m[robot_in_window], Pt)
-            robot_row["mean_ee_speed_m_s"] = cfb.calculate_mean_planar_speed(
-                Px, Py, Pt)
-            rows["robot"].append(robot_row)
+            robot_features["mean_ee_speed_m_s"] = \
+                cfb.calculate_mean_planar_speed(Px, Py, Pt)
 
-        if "gaze" in modalities:
-            gaze_row = dict(metadata)
+        gaze_features = {}
+        if need_gaze:
             for name, feature_fn in gaze_bank:
-                gaze_row[name] = feature_fn(Gx, Gy, Gt, Px, Py, Pt)
-            rows["gaze"].append(gaze_row)
+                gaze_features[name] = feature_fn(Gx, Gy, Gt, Px, Py, Pt)
 
-        if "joint" in modalities:
-            joint_row = dict(metadata)
+        joint_features = {}
+        if need_joint:
             for name, feature_fn in joint_bank:
-                joint_row[name] = feature_fn(
+                joint_features[name] = feature_fn(
                     Gx, Gy, Gt, Px, Py, Pt, Vx, Vy, Fx, Fy, Wmag, Vcx, Vcy)
-            rows["joint"].append(joint_row)
+
+        if "robot" in modalities:
+            rows["robot"].append({**metadata, **robot_features})
+        if "gaze" in modalities:
+            rows["gaze"].append({**metadata, **gaze_features})
+        if "joint" in modalities:
+            rows["joint"].append({**metadata, **joint_features})
+        if "all" in modalities:
+            all_row = dict(metadata)
+            for name, value in gaze_features.items():
+                all_row[f"gaze_{name}"] = value
+            for name, value in robot_features.items():
+                all_row[f"robot_{name}"] = value
+            for name, value in joint_features.items():
+                all_row[f"joint_{name}"] = value
+            rows["all"].append(all_row)
 
     kept_count = len(rows[modalities[0]])
     print(
@@ -656,7 +691,7 @@ def cache_fingerprint() -> str:
 
 def trial_cache_directory() -> Path:
     return (PROCESSED_DATA_DIRECTORY / "feature_cache" /
-            f"{dataset_name}_{cache_fingerprint()}")
+            f"{output_dataset_name}_{cache_fingerprint()}")
 
 
 def cached_trial_path(
@@ -703,8 +738,8 @@ def main() -> None:
     for modality in modalities_to_build:
         print(f"Output: {write_paths[modality]['train']}")
         print(f"Output: {write_paths[modality]['test']}")
-    print(f"\nDataset: {dataset_name}   modalities: "
-          f"{', '.join(modalities_to_build)}\n")
+    print(f"\nDataset: {dataset_name}   output tag: {output_dataset_name}   "
+          f"modalities: {', '.join(modalities_to_build)}\n")
     trials = discover_trials()
     print(f"Discovered {len(trials)} trials.\n")
     if not trials:
@@ -773,6 +808,7 @@ def main() -> None:
         "script": SCRIPT_NAME,
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "dataset": dataset_name,
+        "output_dataset_name": output_dataset_name,
         "modalities_built": list(modalities_to_build),
         "trial_count": len(trials),
         "pooled_window_count": pooled_window_count,

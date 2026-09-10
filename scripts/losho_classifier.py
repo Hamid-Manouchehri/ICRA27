@@ -18,8 +18,7 @@ Outputs:
   [_<output_tag>].csv
 
 Depends on:
-- build_modality_feature_datasets.py (writes robot/gaze/joint CSVs)
-- build_modality_feature_dataset_all.py (writes the "all" CSV)
+- build_modality_feature_datasets.py (writes robot/gaze/joint/all CSVs)
 """
 
 import time
@@ -40,7 +39,7 @@ PROCESSED_DATA_DIRECTORY = DATA_DIRECTORY / "processed_data"
 IMAGE_DATA_DIRECTORY = DATA_DIRECTORY / "images"
 
 # -------------------- User Settings --------------------
-modality = "robot"  # TODO "robot" | "gaze" | "joint" | "all"
+modality = "all"  # TODO "robot" | "gaze" | "joint" | "all"
 dataset_name = "chen_manual"  # TODO must match build_modality_feature_datasets.py
 output_tag = ""  # TODO appended to output filenames
 
