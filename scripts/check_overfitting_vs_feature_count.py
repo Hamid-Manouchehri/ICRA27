@@ -40,9 +40,9 @@ PROCESSED_DATA_DIRECTORY = DATA_DIRECTORY / "processed_data"
 IMAGE_DATA_DIRECTORY = DATA_DIRECTORY / "images"
 
 # -------------------- User Settings --------------------
-dataset_name = "chen_manual"  # TODO must match build_modality_feature_datasets.py
+dataset_name = "W_2s"  # TODO must match build_modality_feature_datasets.py
 modalities_to_check = ("robot", "all")  # TODO "robot" | "gaze" | "joint" | "all"
-output_tag = "0909"  # TODO appended to output filenames
+output_tag = ""  # TODO appended to output filenames
 
 # TODO candidate N values; clipped to what's available, and "all
 # features" is always added as a reference point.

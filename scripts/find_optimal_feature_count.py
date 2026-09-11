@@ -39,7 +39,7 @@ PROCESSED_DATA_DIRECTORY = DATA_DIRECTORY / "processed_data"
 IMAGE_DATA_DIRECTORY = DATA_DIRECTORY / "images"
 
 # -------------------- User Settings --------------------
-dataset_name = "chen_manual"  # TODO must match build_modality_feature_datasets.py
+dataset_name = "W_2s"  # TODO must match build_modality_feature_datasets.py
 modalities_to_sweep = ("robot", "all")  # TODO subset of "robot","gaze","joint","all"
 
 # TODO "joint" = robot's own features + these specific joint-bank

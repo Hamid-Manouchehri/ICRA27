@@ -72,7 +72,7 @@ modalities_to_train = ("gaze",)
 # TODO which dataset's feature CSVs to read. Must match
 # build_modality_feature_datasets.py's dataset_name, which writes the
 # suffix these paths expect ("chen_otsu" or "fixed_pilot").
-dataset_name = "chen_manual"
+dataset_name = "W_2s"
 
 # TODO input feature CSVs per modality, as written by
 # build_modality_feature_datasets.py.
@@ -82,7 +82,7 @@ all_modality_csv_paths = {
                f"features_{modality}_{split}_{dataset_name}.csv"
         for split in ("train", "test")
     }
-    for modality in ("robot", "gaze", "joint")
+    for modality in ("robot", "gaze", "joint", "all")
 }
 modality_csv_paths = {
     modality: all_modality_csv_paths[modality]

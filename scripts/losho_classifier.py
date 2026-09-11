@@ -39,8 +39,8 @@ PROCESSED_DATA_DIRECTORY = DATA_DIRECTORY / "processed_data"
 IMAGE_DATA_DIRECTORY = DATA_DIRECTORY / "images"
 
 # -------------------- User Settings --------------------
-modality = "all"  # TODO "robot" | "gaze" | "joint" | "all"
-dataset_name = "chen_manual"  # TODO must match build_modality_feature_datasets.py
+modality = "robot"  # TODO "robot" | "gaze" | "joint" | "all"
+dataset_name = "W_2s"  # TODO must match build_modality_feature_datasets.py
 output_tag = ""  # TODO appended to output filenames
 
 exclude_positional_features = True  # TODO see POSITIONAL_FEATURE_NAMES below

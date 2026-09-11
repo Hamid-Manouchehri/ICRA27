@@ -49,6 +49,12 @@ IMAGE_DATA_DIRECTORY = DATA_DIRECTORY / "images"
 # TODO how many top-ranked features each "_top" variant keeps [count].
 top_n_features = 20
 
+# TODO drop known-confounded features from every feature set before
+# comparison -- matches find_optimal_feature_count.py / check_
+# overfitting_vs_feature_count.py / losho_classifier.py.
+exclude_positional_features = True
+exclude_force_features = True
+
 # TODO which feature sets to evaluate; keys of build_feature_sets().
 feature_sets_to_run = (
     "robot", "gaze", "gaze_pure", "joint",
@@ -62,8 +68,8 @@ run_top_n_variants = True
 # window_offset steps AHEAD from features at t. Must be multiples of
 # window_step_s, since the offset is applied in window steps. Empty
 # tuple skips the sweep.
-lead_time_sweep_s = (0.0, 1.0, 2.0, 3.0, 4.0)
-window_step_s = 1.0  # TODO must match build_modality_feature_datasets.py
+lead_time_sweep_s = (0.0, 2.0, 4.0, 6.0)
+window_step_s = 2.0  # TODO must match build_modality_feature_datasets.py
 
 # TODO which feature sets enter the lead-time sweep -- any key of
 # build_feature_sets() (e.g. "robot", "all", "gaze_pure", ...).
@@ -83,6 +89,69 @@ random_seed = 42
 
 # Window identity, used to line robot and gaze rows up for concatenation.
 key_columns = ["subject", "bandwidth", "shape", "direction", "window_index"]
+
+# Same confound lists as find_optimal_feature_count.py / losho_
+# classifier.py / check_overfitting_vs_feature_count.py -- kept in sync
+# there, duplicated here (standalone).
+POSITIONAL_FEATURE_NAMES = {
+    "robot": {
+        "mean_position_x", "mean_position_y", "std_position_x", "std_position_y",
+        "variance_position_x", "variance_position_y", "minimum_position_x",
+        "maximum_position_x", "range_position_x", "minimum_position_y",
+        "maximum_position_y", "range_position_y", "median_position_x",
+        "median_position_y", "iqr_position_x", "iqr_position_y",
+        "mad_position_x", "mad_position_y", "skewness_position_x",
+        "skewness_position_y", "kurtosis_position_x", "kurtosis_position_y",
+        "covariance_position_xy", "correlation_position_xy",
+        "position_dispersion_rms", "position_bcea_68",
+        "position_x_shannon_entropy", "position_y_shannon_entropy",
+        "position_x_mean_crossing_count", "position_y_mean_crossing_count",
+        "position_x_lag1_autocorrelation", "position_y_lag1_autocorrelation",
+    },
+    "gaze": {
+        "mean_gaze_x", "mean_gaze_y", "std_gaze_x", "std_gaze_y",
+        "variance_gaze_x", "variance_gaze_y", "minimum_gaze_x",
+        "maximum_gaze_x", "range_gaze_x", "minimum_gaze_y", "maximum_gaze_y",
+        "range_gaze_y", "median_gaze_x", "median_gaze_y", "iqr_gaze_x",
+        "iqr_gaze_y", "mad_gaze_x", "mad_gaze_y", "skewness_gaze_x",
+        "skewness_gaze_y", "kurtosis_gaze_x", "kurtosis_gaze_y",
+        "covariance_gaze_xy", "correlation_gaze_xy", "gaze_dispersion_rms",
+        "bcea_68", "gaze_x_shannon_entropy", "gaze_y_shannon_entropy",
+        "gaze_x_mean_crossing_count", "gaze_y_mean_crossing_count",
+        "gaze_x_lag1_autocorrelation", "gaze_y_lag1_autocorrelation",
+    },
+    "joint": set(),
+}
+FORCE_FEATURE_NAMES = {
+    "robot": {
+        "mean_force_magnitude", "std_force_magnitude", "max_force_magnitude",
+        "median_force_magnitude", "rms_force_magnitude", "mean_force_x",
+        "mean_force_y", "std_force_x", "std_force_y",
+    },
+    "gaze": set(),
+    "joint": {
+        "angle_gaze_offset_to_force", "correlation_gaze_ee_distance_force",
+        "correlation_gaze_speed_force", "mean_gaze_ee_distance_high_force",
+        "mean_gaze_ee_distance_low_force", "fraction_gaze_close_during_high_force",
+    },
+}
+POSITIONAL_FEATURE_NAMES["all"] = (
+    {f"robot_{name}" for name in POSITIONAL_FEATURE_NAMES["robot"]} |
+    {f"gaze_{name}" for name in POSITIONAL_FEATURE_NAMES["gaze"]}
+)
+FORCE_FEATURE_NAMES["all"] = (
+    {f"robot_{name}" for name in FORCE_FEATURE_NAMES["robot"]} |
+    {f"joint_{name}" for name in FORCE_FEATURE_NAMES["joint"]}
+)
+
+
+def apply_confound_exclusion(features: list, modality: str) -> list:
+    confounded = set()
+    if exclude_positional_features:
+        confounded |= POSITIONAL_FEATURE_NAMES[modality]
+    if exclude_force_features:
+        confounded |= FORCE_FEATURE_NAMES[modality]
+    return [f for f in features if f not in confounded]
 
 
 def modality_table(modality: str) -> pd.DataFrame:
@@ -156,11 +225,15 @@ def build_feature_sets() -> dict:
     gaze_table = modality_table("gaze")
     joint_table = modality_table("joint")
     all_table = all_modality_table()
-    all_features = feature_columns_of(all_table)
+    all_features = apply_confound_exclusion(
+        feature_columns_of(all_table), "all")
 
-    robot_features = feature_columns_of(robot_table)
-    gaze_features = feature_columns_of(gaze_table)
-    joint_features = feature_columns_of(joint_table)
+    robot_features = apply_confound_exclusion(
+        feature_columns_of(robot_table), "robot")
+    gaze_features = apply_confound_exclusion(
+        feature_columns_of(gaze_table), "gaze")
+    joint_features = apply_confound_exclusion(
+        feature_columns_of(joint_table), "joint")
     pure_gaze_features = [f for f in gaze_features
                           if f not in robot_dependent_gaze_features()]
 
@@ -389,11 +462,22 @@ def plot_confusion_matrix(
         class_order: list, output_path: Path) -> None:
     matrix = confusion_matrix(pooled_true, pooled_predicted, labels=class_order)
     display = ConfusionMatrixDisplay(matrix, display_labels=class_order)
-    fig, axes = plt.subplots(figsize=(4.5, 4.5))
+    fig, axes = plt.subplots(figsize=(4.5, 5.2))
     display.plot(ax=axes, cmap="Blues", colorbar=False, values_format="d")
     axes.set_title(f"LOSO pooled confusion matrix\n{set_name} ({dataset_name})",
                    fontsize=9)
-    fig.tight_layout()
+
+    report_dict = classification_report(
+        pooled_true, pooled_predicted, labels=class_order, output_dict=True,
+        zero_division=0)
+    macro = report_dict["macro avg"]
+    metrics_text = (
+        f"Accuracy: {report_dict['accuracy']:.3f}    "
+        f"Precision: {macro['precision']:.3f}    "
+        f"Recall: {macro['recall']:.3f}    "
+        f"F1-score: {macro['f1-score']:.3f}")
+    fig.text(0.5, 0.02, metrics_text, ha="center", fontsize=8)
+    fig.tight_layout(rect=(0, 0.08, 1, 1))
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
 
