@@ -100,7 +100,7 @@ features_to_include = [
 n_estimators = 300
 random_seed = 42
 
-top_n_features_to_plot = 100  # TODO for the importance bar chart
+top_n_features_to_plot = 20  # TODO for the importance bar chart
 # -------------------- End User Settings --------------------
 
 read_train_path = (PROCESSED_DATA_DIRECTORY /

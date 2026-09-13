@@ -72,3 +72,33 @@ Chen controller has trials. No closed-loop experiment exists to support a
 controller-improvement claim. Replaced with the supported claim: gaze
 extends the horizon over which task demand is predictable (W_2s lead-time
 sweep: +2.7 pts at 4s, +4.4 pts at 6s over robot-only).
+
+### 2026-09-12 — Persistence baseline is degenerate at window offsets 0 and 1
+At offset 0 it scores the label against itself. At offset 1, with contiguous
+non-overlapping windows (window_step_s >= window_size_s), the purity filter
+removes every window containing a label change, so no surviving consecutive
+pair can disagree. Confirmed: exactly 1.000 in all 16 fold-rows at 0 s and
+2 s, versus 0.48-0.71 at 4 s and 6 s. build_paper_results.py flags these
+horizons and writes NaN for the vs-persistence statistics instead of
+quoting a baseline that carries no information.
+
+### 2026-09-12 — Paper numbers come from files, never from analysis run in chat
+Several reported values (Chen damping AUC, the Fine/Gross damping
+difference, every p-value) existed only in a terminal transcript and were
+not reproducible or checkable. build_paper_results.py now regenerates every
+quoted number into paper_fig*/paper_tab* CSVs plus paper_claims_W_2s.csv,
+which maps each claim to its source file, column, and row filter.
+
+### 2026-09-12 — Report per-fold mean, not pooled accuracy
+Pooled (micro) LOSO accuracy concatenates every fold's predictions and
+scores once (robot: 98.01%); the mean of per-fold accuracies is 98.11%.
+Only per-fold values support the paired across-subject tests, so the paper
+uses per-fold mean +/- SD throughout and never mixes the two conventions.
+
+### 2026-09-12 — Analysed trial count is 86, not 103
+103 trials were recorded; 12 belong to excluded s18; of the remaining 91,
+five produced zero windows in the built dataset: s10 narrow/ellipse/cw,
+s11 wide/ellipse/cw, s13 wide/fine_gross/cw, s15 narrow/pear/cw and
+narrow/pear/ccw. s13's is explained (no tobii label file). The other four
+have valid labels, 94.6-99.8% gaze validity, full 120 s duration, and
+normal robot/gaze stream overlap -- cause not yet identified.
