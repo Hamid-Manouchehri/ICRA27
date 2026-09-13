@@ -20,10 +20,11 @@ precedence over generic defaults. The most load-bearing rules from it:
 - **Never execute hardware-control commands (`rtde_control`/`rtde_receive`
   scripts) or run MATLAB without explicit permission.** These scripts drive
   a real 6-DOF arm.
-- Every runnable script has a `# -------------------- User Settings --------------------`
+- Every runnable script has a `# -------------------- Start User Settings --------------------`
   block near the top with `TODO`-commented, unit-annotated, range-annotated
   tunables, sorted most- to least-important. Follow this pattern in new
   scripts; don't scatter tunables through the logic.
+  And the block would ends with `# -------------------- End User Settings --------------------`
 - Variable names carry units and frames as suffixes throughout: `_m`, `_m_s`,
   `_n` (newtons), `_deg`, `_deg_s`, `_rad_s`, `_xy_m`, `_robot_xy_m`. Keep
   this up when adding code — it's how frame/unit bugs get caught by reading.

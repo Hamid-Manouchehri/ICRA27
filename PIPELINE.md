@@ -6,6 +6,12 @@ with the inputs, outputs, settings, and a verification check for each step.
 Verified against the actual files on 2026-09-13. Anything I could not
 verify is marked **[UNVERIFIED]**.
 
+> ⚠️ **2026-09-13: s18 was added (new recording session, 24 raw + 24
+> labeled files, full coverage, verified clean).** Every "Verify" number
+> below predates this and reflects the old 8-subject (s10-s17) cohort —
+> they are marked accordingly. Steps 2-5 need re-running, in order, to
+> fold s18 in. See §3 and §6.
+
 ---
 
 ## 0. What actually matters
@@ -58,8 +64,15 @@ backup, since it is the only destructive one.
 | **Settings** | `robot_csv_filename` — one trial per run, selected by hand |
 | **Interactive** | Yes — keyboard-driven replay, one keypress toggles Fine/Gross |
 
-**Do not re-run.** All 8 subjects are labeled. Re-labeling would change
-the ground truth every result depends on.
+**Do not re-run for s10-s17.** Those 8 subjects are labeled; re-labeling
+would change the ground truth every existing result depends on.
+
+**s18 update (2026-09-13):** a new s18 session was recorded and already
+labeled — 24 raw files + 24 labeled files, full 12-condition coverage,
+no missing robot/tobii pairs (verified). This is a *different* s18
+session than the one excluded on 2026-09-11 (see decision_log.md for
+both entries). It is not yet reflected in any downstream CSV — Step 2
+must be re-run to pick it up.
 
 ---
 
@@ -93,6 +106,7 @@ the ground truth every result depends on.
 ### Verify
 
 ```
+[THESE NUMBERS PREDATE s18 -- re-verify once you rebuild with s18 in]
 8 CSVs written, all ending _W_2s.csv
 robot train+test = 2156 rows total
 subjects present = 10..17 (8 subjects)
@@ -136,6 +150,7 @@ unknown. This script prints per-trial exclusion counters when it runs;
 ### Verify
 
 ```
+[THESE NUMBERS PREDATE s18 -- with s18 in, expect 9 rows/subject, not 8]
 loso_feature_set_comparison_W_2s.csv : robot accuracy = 0.9801 (pooled)
 loso_feature_set_folds_W_2s.csv      : 8 rows per feature set
 loso_lead_time_sweep_W_2s.csv        : 8 rows (2 feature sets x 4 leads)
@@ -182,8 +197,12 @@ losho_fold_results_all_W_2s.csv   : 3 rows
 | **Runtime** | ~1 min (fig5 reads ~5M raw samples) |
 
 Settings: `outputs_to_build` (comment out what you are not changing),
-`dataset_name = "W_2s"`, `expected_subjects = (10..17)`,
-`window_size_s`/`window_step_s` = 2.0 (must match Step 2).
+`dataset_name = "W_2s"`, `expected_subjects = (10..18)` — **updated
+2026-09-13 to include s18**, `window_size_s`/`window_step_s` = 2.0 (must
+match Step 2). This script asserts on `expected_subjects` and will
+correctly crash if Steps 2-4 haven't been re-run yet and still reflect
+the old 8-subject cohort — that is the check working as intended, not a
+bug; re-run Steps 2-4 first.
 
 This script **asserts** its assumptions and crashes loudly if one breaks
 (subject set, one fold per subject, feature counts, class totals,

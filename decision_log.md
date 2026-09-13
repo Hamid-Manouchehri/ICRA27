@@ -102,3 +102,16 @@ s11 wide/ellipse/cw, s13 wide/fine_gross/cw, s15 narrow/pear/cw and
 narrow/pear/ccw. s13's is explained (no tobii label file). The other four
 have valid labels, 94.6-99.8% gaze validity, full 120 s duration, and
 normal robot/gaze stream overlap -- cause not yet identified.
+
+### 2026-09-13 — s18 reinstated with a new recording session
+A new s18 session was recorded and manually labeled today: 24 raw files
++ 24 labeled files, full 12-condition coverage (3 shapes x 2 bandwidths
+x 2 directions), all robot/tobii pairs present -- verified clean, unlike
+the exhaustive-check issues found in some s10-s17 trials. This is a
+DIFFERENT recording session from the s18 excluded on 2026-09-11 (that
+exclusion reason -- uniform "fine" behavior throughout, performance well
+below other subjects -- was never independently confirmed as a
+pre-registered, classifier-independent criterion; see that entry). s18
+is included going forward: expected_subjects in build_paper_results.py
+updated to (10..18). Steps 2-5 must be re-run to fold it into any
+result; nothing downstream reflects it yet.

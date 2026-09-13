@@ -50,8 +50,12 @@ dataset_name = "W_2s"
 
 # TODO subjects expected in every analysis CSV. A mismatch is a hard
 # error, not a warning: it means an input was rebuilt with a different
-# cohort. s18 was excluded from the study.
-expected_subjects = (10, 11, 12, 13, 14, 15, 16, 17)
+# cohort. s18's first recording session was excluded from the study
+# (see decision_log.md, 2026-09-11); a new s18 session was recorded and
+# labeled on 2026-09-13 and is included here (see decision_log.md,
+# 2026-09-13). Update this tuple, not a silent guess, if the cohort
+# changes again.
+expected_subjects = (10, 11, 12, 13, 14, 15, 16, 17, 18)
 
 # TODO window step [s], must match build_modality_feature_datasets.py.
 # Converts lead_time_s into an integer window offset.

@@ -50,7 +50,7 @@ dataset_name = "chen_manual"
 # change window_size_s/window_step_s below, so the new run doesn't
 # overwrite today's CSVs. Downstream scripts just set THEIR dataset_name
 # to this same string to read the tagged files; no code changes needed.
-output_dataset_name = "W_2s"
+output_dataset_name = "W_1s"
 
 # TODO which modality tables to build/write: "robot"|"gaze"|"joint"|
 # "all" (all 3 banks combined into one row, column names prefixed by
@@ -74,7 +74,7 @@ excluded_trial_stems = frozenset({
 # so an interrupted run resumes instead of restarting from zero. The
 # cache key includes every feature-affecting setting, so it self-
 # invalidates; delete the directory to force a full rebuild.
-use_trial_cache = True
+use_trial_cache = False
 
 valid_class_labels = ("Fine", "Gross")
 
@@ -111,8 +111,8 @@ write_paths = {
 }
 
 # --- Windowing ---
-window_size_s = 2.0
-window_step_s = 2.0  # overlap_fraction = 1 - (window_step_s / window_size_s)
+window_size_s = 1.0
+window_step_s = 1.0  # overlap_fraction = 1 - (window_step_s / window_size_s)
 minimum_gaze_samples = 6
 minimum_robot_samples = 10
 
@@ -135,7 +135,7 @@ workspace_half_extent_m = 0.20
 low_speed_threshold_m_s = 0.05
 high_speed_threshold_m_s = 0.30
 close_thresholds_m = (0.01, 0.02, 0.05)
-
+ 
 # --- Train/test split ---
 train_samples_per_class = None
 train_fraction_of_smallest_class = 0.5
