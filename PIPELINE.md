@@ -90,10 +90,10 @@ must be re-run to pick it up.
 | Line | Setting | Value | Meaning |
 |---|---|---|---|
 | 47 | `dataset_name` | `"chen_manual"` | **INPUT selector.** Picks which labeled files to read. **Do not change this to "W_2s"** — it is a registry key, not the output tag. |
-| 53 | `output_dataset_name` | `"W_2s"` | **OUTPUT tag.** Goes into every output filename. |
+| 53 | `output_dataset_name` | `"W_?s"` | **OUTPUT tag.** Goes into every output filename. |
 | 61 | `modalities_to_build` | `("robot","gaze","joint","all")` | All four needed |
-| 114 | `window_size_s` | `2.0` | |
-| 115 | `window_step_s` | `2.0` | = size, so windows do not overlap |
+| 114 | `window_size_s` | `-` | |
+| 115 | `window_step_s` | `-` | = size, so windows do not overlap |
 | 124 | `transition_margin_s` | `0.5` | drops windows near a label change |
 | 125 | `edge_trim_s` | `1.5` | drops trial start/end |
 | 77 | `use_trial_cache` | `True` | reuses per-trial windows; cache key includes the settings above, so it self-invalidates |
@@ -107,10 +107,10 @@ must be re-run to pick it up.
 
 ```
 [THESE NUMBERS PREDATE s18 -- re-verify once you rebuild with s18 in]
-8 CSVs written, all ending _W_2s.csv
+8 CSVs written, all ending _W_?s.csv
 robot train+test = 2156 rows total
-subjects present = 10..17 (8 subjects)
-distinct trials = 86
+subjects present = 10..18 (9 subjects)
+distinct trials = 98
 ```
 
 ⚠️ **Known issue:** 5 recorded trials produce zero windows (s10
@@ -128,24 +128,34 @@ unknown. This script prints per-trial exclusion counters when it runs;
 |---|---|
 | **Script** | `scripts/compare_loso_feature_sets.py` |
 | **Reads** | `features_*_{train,test}_W_2s.csv` |
-| **Writes** | `loso_feature_set_comparison_W_2s.csv`, `loso_feature_set_folds_W_2s.csv`, `loso_lead_time_sweep_W_2s.csv`, `loso_lead_time_sweep_folds_W_2s.csv`, plus confusion-matrix PNGs |
+| **Writes** | `loso_feature_set_comparison_W_?s.csv`, `loso_feature_set_folds_W_?s.csv`, `loso_lead_time_sweep_W_?s.csv`, `loso_lead_time_sweep_folds_W_?s.csv`, plus confusion-matrix PNGs |
 
 ### Settings
 
+**2026-09-13: now fully standalone** — no longer imports
+`train_modality_classifiers.py`. All settings below are its own; §8
+(the old cross-script trap) no longer applies.
+
 | Line | Setting | Value |
 |---|---|---|
-| 55 | `exclude_positional_features` | `True` |
-| 56 | `exclude_force_features` | `True` |
-| 59 | `feature_sets_to_run` | the tuple of sets to evaluate |
-| 71 | `lead_time_sweep_s` | `(0.0, 2.0, 4.0, 6.0)` |
-| 72 | `window_step_s` | `2.0` — **its own copy**, must match Step 2 line 115 |
-| 79 | `dataset_name` | `tmc.dataset_name` — **inherited, see §7** |
+| 56 | `exclude_positional_features` | `True` |
+| 57 | `exclude_force_features` | `True` |
+| 60 | `feature_sets_to_run` | tuple of sets to evaluate |
+| 73 | `lead_time_sweep_s` | `(0.0, 2.0, 4.0, 6.0)` |
+| 74 | `window_step_s` | `2.0` — must match Step 2 line 115 |
+| 82 | `dataset_name` | `"W_1s"` — deliberate, see note below |
 
-> ⚠️ Line 72 is a *duplicate* of Step 2's `window_step_s`. If they
+> ⚠️ Line 74 is a *duplicate* of Step 2's `window_step_s`. If they
 > disagree, every lead time is silently wrong (this bug already happened
 > once: 0.5 vs 2.0 doubled every horizon). Also keep every entry of
 > `lead_time_sweep_s` an exact multiple of `window_step_s`, or sweep
 > points collapse onto each other.
+>
+> **2026-09-13: `dataset_name = "W_1s"` is intentional** — a separate,
+> parallel window-size comparison (1s windows), not the W_2s paper
+> track. Its own `window_step_s` (line 74) is already set to `1.0` to
+> match. Confirm which track you mean before reading any "W_2s" number
+> elsewhere in this doc; the two are not interchangeable.
 
 ### Verify
 
@@ -240,26 +250,12 @@ first run.
 
 ---
 
-## 8. The cross-script trap: `train_modality_classifiers.py`
+## 8. (resolved) `compare_loso_feature_sets.py` is now standalone
 
-`compare_loso_feature_sets.py` line 40 does `import train_modality_classifiers as tmc`,
-then line 79 `dataset_name = tmc.dataset_name`.
-
-**Consequence:** the dataset that Step 3 analyses is set in a *different
-file* than the one you are reading. If you change `dataset_name` in
-`train_modality_classifiers.py` (line 75, currently `"W_2s"`), Step 3
-silently switches datasets.
-
-Step 3 also inherits from it: `target_column`, `metadata_columns`,
-`classifier_name`, `classifier_kwargs`, and the `build_classifier()` and
-`flatten_classification_report()` functions.
-
-**You do not need to run `train_modality_classifiers.py`** — it is guarded
-by `if __name__ == "__main__"`, so importing it does not train anything.
-Just keep line 75 = `"W_2s"`.
-
-(Its own `modalities_to_train = ("gaze",)` on line 70 only matters if you
-run it directly, which you should not.)
+Used to import `train_modality_classifiers.py` for its settings —
+removed 2026-09-13. `train_modality_classifiers.py` still should not be
+run (§0), but Step 3 no longer depends on it at all; its `dataset_name`
+(line 75) is now irrelevant to Step 3.
 
 ---
 
@@ -267,8 +263,8 @@ run it directly, which you should not.)
 
 | Setting | Step 2 | Step 3 | Step 4 | Step 5 | Step 6 |
 |---|---|---|---|---|---|
-| dataset tag | `output_dataset_name="W_2s"` (L53) | via `tmc.dataset_name` (L75 of tmc) | `dataset_name="W_2s"` | `dataset_name="W_2s"` | `dataset_name="W_2s"` |
-| `window_step_s` | 2.0 (L115) | 2.0 (L72) | — | 2.0 | — |
+| dataset tag | `output_dataset_name="W_2s"` (L53) | `dataset_name` (L82, own setting — currently `"W_1s"`, ⚠️ mismatch) | `dataset_name="W_2s"` | `dataset_name="W_2s"` | `dataset_name="W_2s"` |
+| `window_step_s` | 2.0 (L115) | 2.0 (L74) | — | 2.0 | — |
 | `window_size_s` | 2.0 (L114) | — | — | 2.0 | — |
 | exclude positional | — | `True` | `True` | — | — |
 | exclude force | — | `True` | `True` | — | — |

@@ -4,9 +4,13 @@ all 3 banks combined into one row, column names prefixed by bank),
 from raw robot + gaze trial CSVs.
 
 Inputs:
-- robot + tobii trial CSVs and calibration JSON, per DATASET_REGISTRY
-  [dataset_name] (data/raw_data/ or data/processed_data/, and
-  data/calibrations/)
+- chen_manual (the dataset in use): robot + tobii trial CSVs
+  (data/processed_data/) and calibration JSON (data/calibrations/),
+  for every combination of chen_manual_subjects/_bandwidths/_shapes/
+  _directions below -- an explicit trial matrix, not a glob.
+- fixed_pilot / chen_otsu (legacy, unused, kept for reference): same
+  file kinds, discovered instead via DATASET_REGISTRY[dataset_name]'s
+  glob + regex + filename templates.
 
 Outputs:
 - data/processed_data/features_{robot,gaze,joint,all}_{train,test}_
@@ -42,15 +46,30 @@ CALIBRATION_DIRECTORY = DATA_DIRECTORY / "calibrations"
 JSON_DIRECTORY = DATA_DIRECTORY / "json"
 
 # -------------------- User Settings --------------------
-# TODO which labeled dataset to build from -- a key of DATASET_REGISTRY
-# below ("chen_otsu" or "fixed_pilot").
+# TODO which labeled dataset to build from -- "chen_manual" (explicit
+# trial matrix below, this is the one in use) or a key of
+# DATASET_REGISTRY further down ("chen_otsu"/"fixed_pilot", both
+# legacy/unused).
 dataset_name = "chen_manual"
+
+# TODO the exact chen_manual trial matrix -- edit these four tuples
+# directly to add/remove a subject, shape, bandwidth, or direction.
+# Every combination is checked explicitly at startup (see
+# discover_chen_manual_trials()) and any missing file is reported by
+# name before feature computation starts, instead of being silently
+# skipped mid-run one line at a time -- that silent-skip is exactly
+# what dropped subject 18 before its calibration files existed (see
+# decision_log.md, 2026-09-13).
+chen_manual_subjects = (10, 11, 12, 13, 14, 15, 16, 17, 18)
+chen_manual_bandwidths = ("narrow", "wide")
+chen_manual_shapes = ("ellipse", "pear", "fine_gross")
+chen_manual_directions = ("clockwise", "counter_clockwise")
 
 # TODO output file/cache tag -- change this (not dataset_name) when you
 # change window_size_s/window_step_s below, so the new run doesn't
 # overwrite today's CSVs. Downstream scripts just set THEIR dataset_name
 # to this same string to read the tagged files; no code changes needed.
-output_dataset_name = "W_1s"
+output_dataset_name = "W_2s"
 
 # TODO which modality tables to build/write: "robot"|"gaze"|"joint"|
 # "all" (all 3 banks combined into one row, column names prefixed by
@@ -111,8 +130,8 @@ write_paths = {
 }
 
 # --- Windowing ---
-window_size_s = 1.0
-window_step_s = 1.0  # overlap_fraction = 1 - (window_step_s / window_size_s)
+window_size_s = 2.0
+window_step_s = 2.0  # overlap_fraction = 1 - (window_step_s / window_size_s)
 minimum_gaze_samples = 6
 minimum_robot_samples = 10
 
@@ -177,25 +196,23 @@ DATASET_REGISTRY = {
                           "_{shape}_shape_{direction}_s{subject}.json"),
         condition_fields=("bandwidth", "shape", "direction"),
     ),
-    # Hand-labeled via manual_label_chen_var_adm_2d_by_live_replay.py.
-    # Same trial-token/condition-field shape as chen_otsu (only the
-    # "_live_labeled_" segment differs), so no other code here needed
-    # to change -- discover_trials() is already generic over this dict.
-    "chen_manual": dict(
-        robot_directory=PROCESSED_DATA_DIRECTORY,
-        robot_glob="ur5e_chen_var_adm_2d_live_labeled_*.csv",
-        robot_pattern=re.compile(
-            r"^ur5e_chen_var_adm_2d_live_labeled_"
-            r"(?P<bandwidth>wide|narrow)_(?P<shape>.+)_shape_"
-            r"(?P<direction>counter_clockwise|clockwise)"
-            r"_s(?P<subject>\d+)\.csv$"),
-        gaze_name=("tobii_chen_var_adm_2d_live_labeled_{bandwidth}_{shape}"
-                   "_shape_{direction}_s{subject}.csv"),
-        calibration_name=("tobii_coppelia_reference_calibration_{bandwidth}"
-                          "_{shape}_shape_{direction}_s{subject}.json"),
-        condition_fields=("bandwidth", "shape", "direction"),
-    ),
+    # chen_manual used to be defined here too (identical shape to
+    # chen_otsu above, only the "_live_labeled_" segment differed).
+    # It's now built explicitly from the chen_manual_subjects/
+    # _bandwidths/_shapes/_directions settings and
+    # discover_chen_manual_trials() below instead -- no glob, regex, or
+    # registry entry for it any more.
 }
+
+# The single source every downstream function reads dataset config
+# from, regardless of which discovery mechanism produced the trials.
+if dataset_name == "chen_manual":
+    ACTIVE_DATASET = dict(
+        robot_directory=PROCESSED_DATA_DIRECTORY,
+        condition_fields=("bandwidth", "shape", "direction"),
+    )
+else:
+    ACTIVE_DATASET = DATASET_REGISTRY[dataset_name]
 
 
 def parse_condition_value(text: str):
@@ -210,16 +227,98 @@ def describe_trial(trial: dict) -> str:
     return f"{condition_text} s{trial['subject']}"
 
 
-def discover_trials() -> list:
-    dataset = DATASET_REGISTRY[dataset_name]
-    robot_directory = dataset["robot_directory"]
+def chen_manual_trial_files(
+        subject: int, bandwidth: str, shape: str, direction: str) -> dict:
+    """The three file paths for one chen_manual trial, built directly
+    from an f-string -- no regex, no .format() template. If the live-
+    labeling filename convention ever changes, this is the one place
+    to edit.
+
+    Inputs:
+      - subject, bandwidth, shape, direction: one trial identity.
+    Outputs:
+      - dict with robot_csv_file, gaze_csv_file, calibration_json_file
+        (Paths that may or may not exist -- existence is checked by
+        the caller)."""
+    stem = f"{bandwidth}_{shape}_shape_{direction}_s{subject}"
+    return dict(
+        robot_csv_file=PROCESSED_DATA_DIRECTORY /
+            f"ur5e_chen_var_adm_2d_live_labeled_{stem}.csv",
+        gaze_csv_file=PROCESSED_DATA_DIRECTORY /
+            f"tobii_chen_var_adm_2d_live_labeled_{stem}.csv",
+        calibration_json_file=CALIBRATION_DIRECTORY /
+            f"tobii_coppelia_reference_calibration_{stem}.json",
+    )
+
+
+def discover_chen_manual_trials() -> list:
+    """Every (subject, bandwidth, shape, direction) combination from
+    the chen_manual_* settings, checked explicitly against disk.
+
+    Inputs:
+      - chen_manual_subjects/_bandwidths/_shapes/_directions settings.
+    Outputs:
+      - list of trial dicts (robot_csv_file, gaze_csv_file,
+        calibration_json_file, condition, subject) for combinations
+        with all three files present. Prints every incomplete
+        combination by name, then a total, before any feature
+        computation starts -- so a missing file for a whole subject
+        (as happened with s18's calibration JSON) cannot be missed in
+        a long scrolling log."""
+    combinations = [
+        (subject, bandwidth, shape, direction)
+        for subject in chen_manual_subjects
+        for bandwidth in chen_manual_bandwidths
+        for shape in chen_manual_shapes
+        for direction in chen_manual_directions
+    ]
+    trials = []
+    incomplete = []
+    for subject, bandwidth, shape, direction in combinations:
+        robot_stem = (f"ur5e_chen_var_adm_2d_live_labeled_{bandwidth}_"
+                      f"{shape}_shape_{direction}_s{subject}")
+        if robot_stem in excluded_trial_stems:
+            continue
+        paths = chen_manual_trial_files(subject, bandwidth, shape, direction)
+        missing_files = [name for name, path in paths.items()
+                         if not path.is_file()]
+        if missing_files:
+            incomplete.append(
+                (subject, bandwidth, shape, direction, missing_files))
+            continue
+        trials.append(dict(
+            **paths, subject=subject,
+            condition=dict(bandwidth=bandwidth, shape=shape,
+                           direction=direction)))
+
+    print(f"chen_manual trial matrix: {len(chen_manual_subjects)} subjects "
+          f"x {len(chen_manual_bandwidths)} bandwidths x "
+          f"{len(chen_manual_shapes)} shapes x "
+          f"{len(chen_manual_directions)} directions = "
+          f"{len(combinations)} combinations.")
+    if incomplete:
+        print(f"INCOMPLETE -- {len(incomplete)} combination(s) missing a "
+              f"file:")
+        for subject, bandwidth, shape, direction, missing_files in incomplete:
+            print(f"  s{subject} {bandwidth} {shape} {direction}: "
+                  f"missing {', '.join(missing_files)}")
+    print(f"{len(trials)} complete trials found "
+          f"({len(combinations) - len(trials)} incomplete/excluded).\n")
+    return trials
+
+
+def discover_trials_from_registry() -> list:
+    """fixed_pilot / chen_otsu only (legacy, unused): glob every robot
+    CSV matching the registry's pattern, then derive and check the
+    matching gaze CSV and calibration JSON from filename templates."""
+    robot_directory = ACTIVE_DATASET["robot_directory"]
     trials = []
     for robot_csv_file in sorted(
-            robot_directory.glob(dataset["robot_glob"])):
+            robot_directory.glob(ACTIVE_DATASET["robot_glob"])):
         if robot_csv_file.stem in excluded_trial_stems:
             print(f"Skipping {robot_csv_file.name}: in excluded_trial_stems.")
             continue
-        match = dataset["robot_pattern"].match(robot_csv_file.name)
+        match = ACTIVE_DATASET["robot_pattern"].match(robot_csv_file.name)
         if not match:
             print(f"Skipping {robot_csv_file.name}: unexpected filename.")
             continue
@@ -227,12 +326,13 @@ def discover_trials() -> list:
                        for key, value in match.groupdict().items()}
         subject = int(name_fields.pop("subject"))
         condition = {field: name_fields[field]
-                     for field in dataset["condition_fields"]}
+                     for field in ACTIVE_DATASET["condition_fields"]}
 
-        gaze_csv_file = robot_directory / dataset["gaze_name"].format(
+        gaze_csv_file = robot_directory / ACTIVE_DATASET["gaze_name"].format(
             subject=subject, **name_fields)
         calibration_json_file = (
-            CALIBRATION_DIRECTORY / dataset["calibration_name"].format(
+            CALIBRATION_DIRECTORY /
+            ACTIVE_DATASET["calibration_name"].format(
                 subject=subject, **name_fields))
 
         if not gaze_csv_file.is_file():
@@ -249,6 +349,14 @@ def discover_trials() -> list:
             calibration_json_file=calibration_json_file,
             condition=condition, subject=subject))
     return trials
+
+
+def discover_trials() -> list:
+    """Dispatches to the explicit chen_manual matrix, or the legacy
+    registry-based glob for fixed_pilot/chen_otsu."""
+    if dataset_name == "chen_manual":
+        return discover_chen_manual_trials()
+    return discover_trials_from_registry()
 
 
 # ======================================================================
@@ -603,8 +711,7 @@ def build_windows(streams: dict, trial: dict, modalities) -> dict:
 # ======================================================================
 
 def split_train_test_balanced(feature_tables: dict) -> dict:
-    condition_fields = list(
-        DATASET_REGISTRY[dataset_name]["condition_fields"])
+    condition_fields = list(ACTIVE_DATASET["condition_fields"])
     key_columns = ["subject"] + condition_fields + ["window_index"]
     # Any built modality works as the key table: all of them carry the
     # same windows in the same order, by construction above.
@@ -732,9 +839,14 @@ def save_run_manifest(manifest: dict) -> None:
 
 def main() -> None:
     start_time_s = time.perf_counter()
-    dataset = DATASET_REGISTRY[dataset_name]
-    print(f"Input:  {dataset['robot_directory']}/{dataset['robot_glob']} "
-          f"(+ matching gaze CSVs and calibration JSON)")
+    if dataset_name == "chen_manual":
+        print(f"Input:  {PROCESSED_DATA_DIRECTORY}/ur5e_chen_var_adm_2d_"
+              f"live_labeled_*.csv (+ matching gaze CSVs and calibration "
+              f"JSON; explicit trial matrix, see chen_manual_* settings)")
+    else:
+        print(f"Input:  {ACTIVE_DATASET['robot_directory']}/"
+              f"{ACTIVE_DATASET['robot_glob']} "
+              f"(+ matching gaze CSVs and calibration JSON)")
     for modality in modalities_to_build:
         print(f"Output: {write_paths[modality]['train']}")
         print(f"Output: {write_paths[modality]['test']}")
@@ -745,7 +857,7 @@ def main() -> None:
     if not trials:
         raise SystemExit(
             f"No trials found for dataset_name='{dataset_name}' under "
-            f"{DATASET_REGISTRY[dataset_name]['robot_directory']}.")
+            f"{ACTIVE_DATASET['robot_directory']}.")
 
     cache_directory = trial_cache_directory()
     if use_trial_cache:

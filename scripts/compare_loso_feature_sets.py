@@ -21,10 +21,10 @@ Outputs:
 
 Depends on:
 - classifier_feature_bank.py
-- train_modality_classifiers.py
 - build_modality_feature_datasets.py (writes robot/gaze/joint/all CSVs)
 """
 
+import time
 from pathlib import Path
 
 import matplotlib
@@ -32,12 +32,14 @@ matplotlib.use("Agg")  # non-interactive backend -- this script only saves PNGs
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
     ConfusionMatrixDisplay, accuracy_score, classification_report,
     confusion_matrix)
+from sklearn.svm import SVC
 
 import classifier_feature_bank as cfb
-import train_modality_classifiers as tmc
 
 SCRIPT_DIRECTORY = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIRECTORY.parent
@@ -47,7 +49,7 @@ IMAGE_DATA_DIRECTORY = DATA_DIRECTORY / "images"
 
 # -------------------- User Settings --------------------
 # TODO how many top-ranked features each "_top" variant keeps [count].
-top_n_features = 20
+top_n_features = 10
 
 # TODO drop known-confounded features from every feature set before
 # comparison -- matches find_optimal_feature_count.py / check_
@@ -56,10 +58,7 @@ exclude_positional_features = True
 exclude_force_features = True
 
 # TODO which feature sets to evaluate; keys of build_feature_sets().
-feature_sets_to_run = (
-    "robot", "gaze", "gaze_pure", "joint",
-    "robot_plus_gaze", "robot_plus_gaze_pure",
-)
+feature_sets_to_run = ("robot", "gaze", "joint", "all")
 
 # TODO also run each set restricted to its top N features.
 run_top_n_variants = True
@@ -68,19 +67,40 @@ run_top_n_variants = True
 # window_offset steps AHEAD from features at t. Must be multiples of
 # window_step_s, since the offset is applied in window steps. Empty
 # tuple skips the sweep.
-lead_time_sweep_s = (0.0, 2.0, 4.0, 6.0)
+lead_time_sweep_s = (0.0, 4.0, 6.0, 8.0)
 window_step_s = 2.0  # TODO must match build_modality_feature_datasets.py
 
 # TODO which feature sets enter the lead-time sweep -- any key of
 # build_feature_sets() (e.g. "robot", "all", "gaze_pure", ...).
 lead_time_feature_sets = ("robot", "all")
 
-# Reused from train_modality_classifiers.py so settings live in one place.
-dataset_name = tmc.dataset_name
-target_column = tmc.target_column
-metadata_columns = tmc.metadata_columns
-classifier_name = tmc.classifier_name
-classifier_kwargs = tmc.classifier_kwargs
+# TODO which dataset's feature CSVs to read -- must match build_
+# modality_feature_datasets.py's output_dataset_name. Own setting now
+# (previously inherited from train_modality_classifiers.py).
+dataset_name = "W_2s"
+
+target_column = "trial_class_label"
+metadata_columns = [
+    "subject", "shape", "damping_n_s_m", "bandwidth", "direction",
+    "window_index", "window_start_s", "window_end_s", "window_center_s",
+    "gaze_sample_count", "robot_sample_count",
+]
+
+# TODO the classifier fit for every LOSO fold -- change this one line
+# to switch models, or add another entry to CLASSIFIER_REGISTRY below.
+classifier_name = "random_forest"
+classifier_kwargs = {"n_estimators": 300, "random_state": 42, "n_jobs": -1}
+
+# TODO input feature CSVs per modality, as written by build_modality_
+# feature_datasets.py.
+all_modality_csv_paths = {
+    modality: {
+        split: PROCESSED_DATA_DIRECTORY /
+               f"features_{modality}_{split}_{dataset_name}.csv"
+        for split in ("train", "test")
+    }
+    for modality in ("robot", "gaze", "joint", "all")
+}
 
 # TODO fraction of the smaller class drawn per class for each fold's
 # training set -- matches train_modality_classifiers_loso.py.
@@ -145,6 +165,42 @@ FORCE_FEATURE_NAMES["all"] = (
 )
 
 
+# Duplicated from train_modality_classifiers.py rather than imported --
+# standalone-script convention (see e.g. losho_classifier.py), so this
+# script has no cross-file settings coupling.
+CLASSIFIER_REGISTRY = {
+    "random_forest": RandomForestClassifier,
+    "logistic_regression": LogisticRegression,
+    "svm": SVC,
+}
+
+
+def build_classifier(name: str, **kwargs):
+    if name not in CLASSIFIER_REGISTRY:
+        raise ValueError(
+            f"Unknown classifier_name '{name}'. Available: "
+            f"{sorted(CLASSIFIER_REGISTRY)} (or add your own to "
+            f"CLASSIFIER_REGISTRY).")
+    return CLASSIFIER_REGISTRY[name](**kwargs)
+
+
+def flatten_classification_report(
+        modality: str, report: dict, class_order: list) -> dict:
+    """One flat dict: accuracy, then precision/recall/f1 for each class
+    in class_order, then macro and weighted averages."""
+    row = {"modality": modality, "accuracy": report["accuracy"]}
+    for class_name in class_order:
+        for metric in ("precision", "recall", "f1-score"):
+            row[f"{class_name}_{metric.replace('-score', '')}"] = \
+                report[class_name][metric]
+    for avg_name in ("macro avg", "weighted avg"):
+        prefix = avg_name.split()[0]
+        for metric in ("precision", "recall", "f1-score"):
+            row[f"{prefix}_{metric.replace('-score', '')}"] = \
+                report[avg_name][metric]
+    return row
+
+
 def apply_confound_exclusion(features: list, modality: str) -> list:
     confounded = set()
     if exclude_positional_features:
@@ -157,7 +213,7 @@ def apply_confound_exclusion(features: list, modality: str) -> list:
 def modality_table(modality: str) -> pd.DataFrame:
     """One modality's train+test windows pooled back into one table, the
     same way train_modality_classifiers_loso.py pools them."""
-    paths = tmc.all_modality_csv_paths[modality]
+    paths = all_modality_csv_paths[modality]
     return pd.concat(
         [pd.read_csv(paths["train"]), pd.read_csv(paths["test"])],
         ignore_index=True)
@@ -325,12 +381,12 @@ def run_loso(set_name: str, table: pd.DataFrame, feature_columns: list,
         if keep_top_n is not None and keep_top_n < len(feature_columns):
             # Rank on THIS fold's training data only -- ranking on the
             # pooled table would leak the held-out subject.
-            ranker = tmc.build_classifier(classifier_name, **classifier_kwargs)
+            ranker = build_classifier(classifier_name, **classifier_kwargs)
             ranker.fit(train_table[feature_columns], train_table[label_column])
             order = np.argsort(ranker.feature_importances_)[::-1]
             fold_features = [feature_columns[i] for i in order[:keep_top_n]]
 
-        model = tmc.build_classifier(classifier_name, **classifier_kwargs)
+        model = build_classifier(classifier_name, **classifier_kwargs)
         model.fit(train_table[fold_features], train_table[label_column])
         predicted = model.predict(test_table[fold_features])
 
@@ -361,7 +417,7 @@ def run_loso(set_name: str, table: pd.DataFrame, feature_columns: list,
     pooled_predicted = pd.concat(all_predicted, ignore_index=True)
     report = classification_report(
         pooled_true, pooled_predicted, output_dict=True, zero_division=0)
-    summary_row = tmc.flatten_classification_report(
+    summary_row = flatten_classification_report(
         set_name, report, class_order)
     fold_table = pd.DataFrame(fold_rows)
     summary_row["feature_count"] = int(fold_table["feature_count"].iloc[0])
@@ -381,21 +437,25 @@ def run_loso(set_name: str, table: pd.DataFrame, feature_columns: list,
 def run_lead_time_sweep(feature_sets: dict) -> tuple:
     """Predict the label lead_time_s AHEAD from features at t, for each
     feature set, so gaze's anticipation can be compared against force's
-    (and against simply assuming the regime persists)."""
+    (and against simply assuming the regime persists). Restricted to
+    each set's own top_n_features (ranked per-fold, as in run_loso) so
+    sets with more raw columns (e.g. "all" at 172 vs "robot" at 57)
+    don't win just from having more features available."""
     summary_rows, fold_rows = [], []
     print(f"\n{'=' * 78}\nLead-time sweep -- predicting label(t + lead) "
-          f"from features(t)\n{'=' * 78}")
+          f"from features(t), top {top_n_features} features per set"
+          f"\n{'=' * 78}")
 
     for lead_time_s in lead_time_sweep_s:
         window_offset = int(round(lead_time_s / window_step_s))
         for set_name in lead_time_feature_sets:
             table, feature_columns = feature_sets[set_name]
             shifted = shift_labels_forward(table, window_offset)
-            variant_name = f"{set_name}@lead{lead_time_s:g}s"
+            variant_name = f"{set_name}_top{top_n_features}@lead{lead_time_s:g}s"
 
             summary_row, variant_folds, _, _ = run_loso(
                 variant_name, shifted, feature_columns,
-                label_column="future_label")
+                keep_top_n=top_n_features, label_column="future_label")
             summary_row["lead_time_s"] = lead_time_s
             summary_row["base_feature_set"] = set_name
             summary_row["windows"] = len(shifted)
@@ -450,7 +510,8 @@ def plot_lead_time_sweep(sweep_table: pd.DataFrame, output_path: Path) -> None:
     axes.set_ylabel("LOSO accuracy")
     axes.set_ylim(0.4, 1.0)
     axes.grid(alpha=0.3)
-    axes.set_title(f"Anticipation: predicting label(t + lead) -- {dataset_name}")
+    axes.set_title(f"Anticipation: predicting label(t + lead) -- "
+                   f"{dataset_name}, top {top_n_features} features")
     axes.legend(fontsize=8)
     fig.tight_layout()
     fig.savefig(output_path, dpi=150)
@@ -483,6 +544,7 @@ def plot_confusion_matrix(
 
 
 def main() -> None:
+    start_time_s = time.perf_counter()
     print(f"Input:  features_{{robot,gaze,joint,all}}_{{train,test}}_"
           f"{dataset_name}.csv")
     print(f"Output: loso_feature_set_comparison_{dataset_name}.{{csv,png}}")
@@ -538,6 +600,8 @@ def main() -> None:
     if not summary_rows:
         # feature_sets_to_run empty: sweep-only run, leave the existing
         # comparison CSVs alone rather than overwriting them with nothing.
+        elapsed_s = time.perf_counter() - start_time_s
+        print(f"\nTotal time: {elapsed_s:.1f} s ({elapsed_s / 60.0:.1f} min)")
         return
 
     summary_table = pd.DataFrame(summary_rows)
@@ -563,6 +627,9 @@ def main() -> None:
     ]].rename(columns={"modality": "feature_set"}).to_string(index=False))
     print(f"\nWrote:\n  {summary_path.name}\n  {folds_path.name}\n"
           f"  {image_path.name}")
+
+    elapsed_s = time.perf_counter() - start_time_s
+    print(f"\nTotal time: {elapsed_s:.1f} s ({elapsed_s / 60.0:.1f} min)")
 
 
 if __name__ == "__main__":
