@@ -72,7 +72,7 @@ close all;
 clc;
 
 script_directory = fileparts(mfilename('fullpath'));
-raw_data_directory = fullfile(script_directory, '..', 'data', 'raw_data');
+raw_data_directory = fullfile(script_directory, '..', 'data', 'raw_data', 'otsu_labeled');
 
 %% User Settings
 % TODO the two trials being compared.

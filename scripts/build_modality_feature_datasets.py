@@ -6,19 +6,23 @@ from raw robot + gaze trial CSVs.
 Inputs:
 - chen_manual (the dataset in use): robot + tobii trial CSVs
   (data/processed_data/) and calibration JSON (data/calibrations/),
-  for every combination of chen_manual_subjects/_bandwidths/_shapes/
-  _directions below -- an explicit trial matrix, not a glob.
+  one PER TRIAL for every combination of chen_manual_subjects/
+  _bandwidths/_shapes/_directions -- an explicit trial matrix, not a
+  glob. Per-trial filenames are built from the explicit
+  chen_manual_{robot_csv,gaze_csv,calibration_json}_pattern settings
+  (a pattern, not one setting per file, since the trial count is
+  data-dependent -- see chen_manual_trial_files()).
 - fixed_pilot / chen_otsu (legacy, unused, kept for reference): same
   file kinds, discovered instead via DATASET_REGISTRY[dataset_name]'s
   glob + regex + filename templates.
 
-Outputs:
-- data/processed_data/features_{robot,gaze,joint,all}_{train,test}_
-  <output_dataset_name>.csv (whichever modalities_to_build lists)
+Outputs (exact filenames in User Settings, write_*_csv):
+- 8 feature CSVs: features_{robot,gaze,joint,all}_{train,test}.csv
 - data/processed_data/feature_cache/<output_dataset_name>_
-  <fingerprint>/ (per-trial cache)
+  <fingerprint>/ (per-trial cache; inherently dynamic, self-
+  invalidating on any feature-affecting setting change)
 - data/json/build_modality_feature_datasets_<timestamp>.json (run
-  manifest)
+  manifest; inherently dynamic, one per run)
 
 Depends on:
 - classifier_feature_bank.py
@@ -65,10 +69,33 @@ chen_manual_bandwidths = ("narrow", "wide")
 chen_manual_shapes = ("ellipse", "pear", "fine_gross")
 chen_manual_directions = ("clockwise", "counter_clockwise")
 
-# TODO output file/cache tag -- change this (not dataset_name) when you
-# change window_size_s/window_step_s below, so the new run doesn't
-# overwrite today's CSVs. Downstream scripts just set THEIR dataset_name
-# to this same string to read the tagged files; no code changes needed.
+# TODO explicit output filenames -- typed out, not built from a tag, so
+# the exact file this script writes is always visible here. Change
+# these (not dataset_name above) when you change window_size_s/
+# window_step_s below, so the new run doesn't overwrite today's CSVs.
+write_robot_train_csv = "features_robot_train_W_2s.csv"
+write_robot_test_csv = "features_robot_test_W_2s.csv"
+write_gaze_train_csv = "features_gaze_train_W_2s.csv"
+write_gaze_test_csv = "features_gaze_test_W_2s.csv"
+write_joint_train_csv = "features_joint_train_W_2s.csv"
+write_joint_test_csv = "features_joint_test_W_2s.csv"
+write_all_train_csv = "features_all_train_W_2s.csv"
+write_all_test_csv = "features_all_test_W_2s.csv"
+
+# TODO chen_manual INPUT filename PATTERNS -- one robot/gaze/
+# calibration file PER TRIAL (chen_manual_subjects x _bandwidths x
+# _shapes x _directions below can give ~100+ trials x 3 files, so
+# these stay patterns rather than one explicit setting per file; see
+# chen_manual_trial_files()). {stem} is
+# "{bandwidth}_{shape}_shape_{direction}_s{subject}".
+chen_manual_robot_csv_pattern = "ur5e_chen_var_adm_2d_live_labeled_{stem}.csv"
+chen_manual_gaze_csv_pattern = "tobii_chen_var_adm_2d_live_labeled_{stem}.csv"
+chen_manual_calibration_json_pattern = (
+    "tobii_coppelia_reference_calibration_{stem}.json")
+
+# TODO display/bookkeeping label only -- feature_cache/ subdirectory
+# prefix and a field in the run manifest JSON. NOT used to build any of
+# the explicit read/write filenames above or below.
 output_dataset_name = "W_2s"
 
 # TODO which modality tables to build/write: "robot"|"gaze"|"joint"|
@@ -97,36 +124,20 @@ use_trial_cache = False
 
 valid_class_labels = ("Fine", "Gross")
 
-# Output names carry output_dataset_name so different runs (datasets,
-# or window settings -- see output_dataset_name above) can coexist
-# instead of one silently overwriting the other. The original pilot run
-# predates this and left unsuffixed features_*_{train,test}.csv files;
-# rename those to *_fixed_pilot.csv to reuse them here.
+# Built from the explicit write_*_csv settings above -- one dict lookup
+# site (main(), save_run_manifest()) instead of re-typing the four-way
+# branch everywhere a modality's output path is needed. The original
+# pilot run predates this and left unsuffixed features_*_{train,test}.
+# csv files; rename those to *_fixed_pilot.csv to reuse them here.
 write_paths = {
-    "robot": {
-        "train": PROCESSED_DATA_DIRECTORY /
-                 f"features_robot_train_{output_dataset_name}.csv",
-        "test": PROCESSED_DATA_DIRECTORY /
-                f"features_robot_test_{output_dataset_name}.csv",
-    },
-    "gaze": {
-        "train": PROCESSED_DATA_DIRECTORY /
-                 f"features_gaze_train_{output_dataset_name}.csv",
-        "test": PROCESSED_DATA_DIRECTORY /
-                f"features_gaze_test_{output_dataset_name}.csv",
-    },
-    "joint": {
-        "train": PROCESSED_DATA_DIRECTORY /
-                 f"features_joint_train_{output_dataset_name}.csv",
-        "test": PROCESSED_DATA_DIRECTORY /
-                f"features_joint_test_{output_dataset_name}.csv",
-    },
-    "all": {
-        "train": PROCESSED_DATA_DIRECTORY /
-                 f"features_all_train_{output_dataset_name}.csv",
-        "test": PROCESSED_DATA_DIRECTORY /
-                f"features_all_test_{output_dataset_name}.csv",
-    },
+    "robot": {"train": PROCESSED_DATA_DIRECTORY / write_robot_train_csv,
+              "test": PROCESSED_DATA_DIRECTORY / write_robot_test_csv},
+    "gaze": {"train": PROCESSED_DATA_DIRECTORY / write_gaze_train_csv,
+             "test": PROCESSED_DATA_DIRECTORY / write_gaze_test_csv},
+    "joint": {"train": PROCESSED_DATA_DIRECTORY / write_joint_train_csv,
+              "test": PROCESSED_DATA_DIRECTORY / write_joint_test_csv},
+    "all": {"train": PROCESSED_DATA_DIRECTORY / write_all_train_csv,
+            "test": PROCESSED_DATA_DIRECTORY / write_all_test_csv},
 }
 
 # --- Windowing ---
@@ -243,11 +254,11 @@ def chen_manual_trial_files(
     stem = f"{bandwidth}_{shape}_shape_{direction}_s{subject}"
     return dict(
         robot_csv_file=PROCESSED_DATA_DIRECTORY /
-            f"ur5e_chen_var_adm_2d_live_labeled_{stem}.csv",
+            chen_manual_robot_csv_pattern.format(stem=stem),
         gaze_csv_file=PROCESSED_DATA_DIRECTORY /
-            f"tobii_chen_var_adm_2d_live_labeled_{stem}.csv",
+            chen_manual_gaze_csv_pattern.format(stem=stem),
         calibration_json_file=CALIBRATION_DIRECTORY /
-            f"tobii_coppelia_reference_calibration_{stem}.json",
+            chen_manual_calibration_json_pattern.format(stem=stem),
     )
 
 
@@ -275,11 +286,9 @@ def discover_chen_manual_trials() -> list:
     trials = []
     incomplete = []
     for subject, bandwidth, shape, direction in combinations:
-        robot_stem = (f"ur5e_chen_var_adm_2d_live_labeled_{bandwidth}_"
-                      f"{shape}_shape_{direction}_s{subject}")
-        if robot_stem in excluded_trial_stems:
-            continue
         paths = chen_manual_trial_files(subject, bandwidth, shape, direction)
+        if paths["robot_csv_file"].stem in excluded_trial_stems:
+            continue
         missing_files = [name for name, path in paths.items()
                          if not path.is_file()]
         if missing_files:
@@ -840,9 +849,10 @@ def save_run_manifest(manifest: dict) -> None:
 def main() -> None:
     start_time_s = time.perf_counter()
     if dataset_name == "chen_manual":
-        print(f"Input:  {PROCESSED_DATA_DIRECTORY}/ur5e_chen_var_adm_2d_"
-              f"live_labeled_*.csv (+ matching gaze CSVs and calibration "
-              f"JSON; explicit trial matrix, see chen_manual_* settings)")
+        print(f"Input:  {PROCESSED_DATA_DIRECTORY}/"
+              f"{chen_manual_robot_csv_pattern.format(stem='<stem>')} "
+              f"(+ matching gaze CSV + calibration JSON per trial; "
+              f"explicit trial matrix, see chen_manual_* settings)")
     else:
         print(f"Input:  {ACTIVE_DATASET['robot_directory']}/"
               f"{ACTIVE_DATASET['robot_glob']} "

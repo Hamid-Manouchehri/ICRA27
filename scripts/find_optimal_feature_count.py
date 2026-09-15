@@ -5,17 +5,16 @@ test at each N -- ranking never sees the held-out subject. "joint" =
 robot's own features + joint_extra_features merged in (not the full
 joint bank).
 
-Inputs:
-- features_<modality>_{train,test}_<dataset_name>.csv
-- features_all_{train,test}_<dataset_name>.csv (modality "all")
-- features_joint_{train,test}_<dataset_name>.csv (modality "joint",
-  merged onto robot features)
+Inputs (exact filenames in User Settings, read_*_csv):
+- 8 feature CSVs: features_{robot,gaze,joint,all}_{train,test}.csv
 
-Outputs:
-- data/images/optimal_feature_count_<dataset_name>.png
-- data/processed_data/optimal_feature_count_<modality>_<dataset_name>.csv
-- data/processed_data/optimal_feature_count_summary_<dataset_name>.csv
-- data/processed_data/feature_ranking_<modality>_<dataset_name>.csv
+Outputs (exact filenames in User Settings, write_*):
+- optimal_feature_count_{robot,gaze,joint,all}.csv, one per modality in
+  modalities_to_sweep
+- feature_ranking_{robot,gaze,joint,all}.csv, one per modality in
+  modalities_to_sweep
+- optimal_feature_count.png
+- optimal_feature_count_summary.csv
 
 Depends on:
 - build_modality_feature_datasets.py (writes robot/gaze/joint/all CSVs)
@@ -39,7 +38,42 @@ PROCESSED_DATA_DIRECTORY = DATA_DIRECTORY / "processed_data"
 IMAGE_DATA_DIRECTORY = DATA_DIRECTORY / "images"
 
 # -------------------- User Settings --------------------
-dataset_name = "W_2s"  # TODO must match build_modality_feature_datasets.py
+# TODO explicit input filenames (data/processed_data/) -- each typed
+# out, not built from a dataset-name tag, so the exact file this script
+# reads is always visible here, not reconstructed mentally. Must match
+# whatever build_modality_feature_datasets.py's output_dataset_name
+# last wrote. "joint" modality reads robot's CSVs as its base and
+# merges joint_extra_features on top from read_joint_*_csv.
+read_robot_train_csv = "features_robot_train_W_1s.csv"
+read_robot_test_csv  = "features_robot_test_W_1s.csv"
+read_gaze_train_csv  = "features_gaze_train_W_1s.csv"
+read_gaze_test_csv   = "features_gaze_test_W_1s.csv"
+read_joint_train_csv = "features_joint_train_W_1s.csv"
+read_joint_test_csv  = "features_joint_test_W_1s.csv"
+read_all_train_csv   = "features_all_train_W_1s.csv"
+read_all_test_csv    = "features_all_test_W_1s.csv"
+
+# TODO explicit output filenames (data/processed_data/ for .csv,
+# data/images/ for .png), one PER MODALITY -- a fixed 4-entry lookup,
+# not a naming pattern, since the universe of modalities is fixed
+# (robot/gaze/joint/all); modalities_to_sweep below just selects which
+# of these four get written on a given run.
+write_optimal_feature_count_robot_csv = "optimal_feature_count_robot_W_1s.csv"
+write_optimal_feature_count_gaze_csv  = "optimal_feature_count_gaze_W_1s.csv"
+write_optimal_feature_count_joint_csv = "optimal_feature_count_joint_W_1s.csv"
+write_optimal_feature_count_all_csv   = "optimal_feature_count_all_W_1s.csv"
+write_feature_ranking_robot_csv = "feature_ranking_robot_W_1s.csv"
+write_feature_ranking_gaze_csv  = "feature_ranking_gaze_W_1s.csv"
+write_feature_ranking_joint_csv = "feature_ranking_joint_W_1s.csv"
+write_feature_ranking_all_csv   = "feature_ranking_all_W_1s.csv"
+write_optimal_feature_count_png = "optimal_feature_count_W_1s.png"
+write_optimal_feature_count_summary_csv = "optimal_feature_count_summary_W_1s.csv"
+
+# TODO display-only label for plot titles -- NOT used to build any file
+# path (those are all explicit above). Keep it in sync with the tag in
+# the filenames above so titles stay accurate.
+dataset_label_for_titles = "w_1s"
+
 modalities_to_sweep = ("robot", "all")  # TODO subset of "robot","gaze","joint","all"
 
 # TODO "joint" = robot's own features + these specific joint-bank
@@ -54,7 +88,7 @@ joint_extra_features = [
 # "all features" is always added as a reference point. 125-200 matter
 # for "all" (candidate pool ~200), not for robot (~57).
 feature_counts_to_try = [
-    1, 2, 3, 5, 7, 10, 15, 20, 25, 30, 40, 50, 60, 75, 90, 110, 125, 150, 175, 200]
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 25, 30, 40, 50]
 
 # TODO drop known-confounded features from the candidate pool before
 # ranking/sweeping -- independent toggles (see POSITIONAL_FEATURE_NAMES/
@@ -144,15 +178,40 @@ FORCE_FEATURE_NAMES["all"] = (
     {f"joint_{name}" for name in FORCE_FEATURE_NAMES["joint"]}
 )
 
+# Built from the explicit read_*_csv/write_*_csv settings above -- one
+# dict lookup site per direction (read_pooled_table, save_feature_
+# ranking, main) instead of re-typing the four-way branch everywhere a
+# modality's paths are needed.
+all_modality_csv_paths = {
+    "robot": {"train": PROCESSED_DATA_DIRECTORY / read_robot_train_csv,
+              "test": PROCESSED_DATA_DIRECTORY / read_robot_test_csv},
+    "gaze": {"train": PROCESSED_DATA_DIRECTORY / read_gaze_train_csv,
+             "test": PROCESSED_DATA_DIRECTORY / read_gaze_test_csv},
+    "joint": {"train": PROCESSED_DATA_DIRECTORY / read_joint_train_csv,
+              "test": PROCESSED_DATA_DIRECTORY / read_joint_test_csv},
+    "all": {"train": PROCESSED_DATA_DIRECTORY / read_all_train_csv,
+            "test": PROCESSED_DATA_DIRECTORY / read_all_test_csv},
+}
+write_optimal_feature_count_csv_by_modality = {
+    "robot": write_optimal_feature_count_robot_csv,
+    "gaze": write_optimal_feature_count_gaze_csv,
+    "joint": write_optimal_feature_count_joint_csv,
+    "all": write_optimal_feature_count_all_csv,
+}
+write_feature_ranking_csv_by_modality = {
+    "robot": write_feature_ranking_robot_csv,
+    "gaze": write_feature_ranking_gaze_csv,
+    "joint": write_feature_ranking_joint_csv,
+    "all": write_feature_ranking_all_csv,
+}
+
 
 def merge_extra_features(base_table: pd.DataFrame, split: str,
-                          extra_modality: str, extra_features: list) -> pd.DataFrame:
+                          extra_csv_path: Path, extra_features: list) -> pd.DataFrame:
     """Merge specific named columns from another modality's CSV onto
     base_table, matched by trial+window identity -- same technique as
     train_simple_classifier.py's load_extra_features."""
-    extra_table = pd.read_csv(
-        PROCESSED_DATA_DIRECTORY /
-        f"features_{extra_modality}_{split}_{dataset_name}.csv")
+    extra_table = pd.read_csv(extra_csv_path)
     key_columns = [c for c in
                    ("subject", "shape", "damping_n_s_m", "bandwidth",
                     "direction", "window_index")
@@ -163,14 +222,14 @@ def merge_extra_features(base_table: pd.DataFrame, split: str,
     unmatched = int((merged["_merge"] == "left_only").sum())
     if unmatched:
         raise ValueError(
-            f"{unmatched} {split} windows had no matching {extra_modality} "
-            f"row -- rebuild both modalities with the same dataset_name/"
-            f"settings.")
+            f"{unmatched} {split} windows had no matching row in "
+            f"{extra_csv_path.name} -- rebuild both modalities with "
+            f"matching settings.")
     merged = merged.drop(columns="_merge")
 
     na_count = int(merged[extra_features].isna().any(axis=1).sum())
     if na_count:
-        print(f"  {extra_modality}->joint: dropping {na_count} of "
+        print(f"  {extra_csv_path.name}->joint: dropping {na_count} of "
               f"{len(merged)} {split} windows (extra feature NaN for "
               f"that window).")
         merged = merged.dropna(subset=extra_features).reset_index(drop=True)
@@ -179,24 +238,20 @@ def merge_extra_features(base_table: pd.DataFrame, split: str,
 
 def read_pooled_table(modality: str) -> pd.DataFrame:
     if modality == "all":
-        train_table = pd.read_csv(
-            PROCESSED_DATA_DIRECTORY / f"features_all_train_{dataset_name}.csv")
-        test_table = pd.read_csv(
-            PROCESSED_DATA_DIRECTORY / f"features_all_test_{dataset_name}.csv")
+        train_table = pd.read_csv(all_modality_csv_paths["all"]["train"])
+        test_table = pd.read_csv(all_modality_csv_paths["all"]["test"])
         return pd.concat([train_table, test_table], ignore_index=True)
 
     base_modality = "robot" if modality == "joint" else modality
-    train_table = pd.read_csv(
-        PROCESSED_DATA_DIRECTORY /
-        f"features_{base_modality}_train_{dataset_name}.csv")
-    test_table = pd.read_csv(
-        PROCESSED_DATA_DIRECTORY /
-        f"features_{base_modality}_test_{dataset_name}.csv")
+    train_table = pd.read_csv(all_modality_csv_paths[base_modality]["train"])
+    test_table = pd.read_csv(all_modality_csv_paths[base_modality]["test"])
     if modality == "joint" and joint_extra_features:
         train_table = merge_extra_features(
-            train_table, "train", "joint", joint_extra_features)
+            train_table, "train", all_modality_csv_paths["joint"]["train"],
+            joint_extra_features)
         test_table = merge_extra_features(
-            test_table, "test", "joint", joint_extra_features)
+            test_table, "test", all_modality_csv_paths["joint"]["test"],
+            joint_extra_features)
     return pd.concat([train_table, test_table], ignore_index=True)
 
 
@@ -247,7 +302,7 @@ def save_feature_ranking(modality: str, pooled_table: pd.DataFrame,
     }).sort_values("importance", ascending=False).reset_index(drop=True)
     ranking.insert(0, "rank", np.arange(1, len(ranking) + 1))
     path = (PROCESSED_DATA_DIRECTORY /
-            f"feature_ranking_{modality}_{dataset_name}.csv")
+            write_feature_ranking_csv_by_modality[modality])
     ranking.to_csv(path, index=False)
     print(f"Wrote: {path}")
 
@@ -321,11 +376,11 @@ def plot_results(all_results: dict) -> None:
                 label=modality)
     ax.set_xlabel("Number of features (N)")
     ax.set_ylabel("LOSO accuracy")
-    ax.set_title(f"Accuracy vs. feature count -- {dataset_name}")
+    ax.set_title(f"Accuracy vs. feature count -- {dataset_label_for_titles}")
     ax.grid(alpha=0.3)
     ax.legend()
     fig.tight_layout()
-    path = IMAGE_DATA_DIRECTORY / f"optimal_feature_count_{dataset_name}.png"
+    path = IMAGE_DATA_DIRECTORY / write_optimal_feature_count_png
     fig.savefig(path, dpi=150)
     plt.close(fig)
     print(f"\nWrote: {path}")
@@ -334,19 +389,21 @@ def plot_results(all_results: dict) -> None:
 def report_io_paths() -> None:
     for modality in modalities_to_sweep:
         if modality == "all":
-            print(f"Input:  features_all_{{train,test}}_{dataset_name}.csv")
+            print(f"Input:  {all_modality_csv_paths['all']['train']}")
+            print(f"Input:  {all_modality_csv_paths['all']['test']}")
         else:
             base_modality = "robot" if modality == "joint" else modality
-            print(f"Input:  features_{base_modality}_{{train,test}}_"
-                  f"{dataset_name}.csv")
+            print(f"Input:  {all_modality_csv_paths[base_modality]['train']}")
+            print(f"Input:  {all_modality_csv_paths[base_modality]['test']}")
             if modality == "joint" and joint_extra_features:
-                print(f"Input:  features_joint_{{train,test}}_"
-                      f"{dataset_name}.csv (extra columns: "
-                      f"{', '.join(joint_extra_features)})")
-        print(f"Output: optimal_feature_count_{modality}_{dataset_name}.csv")
-        print(f"Output: feature_ranking_{modality}_{dataset_name}.csv")
-    print(f"Output: optimal_feature_count_{dataset_name}.png")
-    print(f"Output: optimal_feature_count_summary_{dataset_name}.csv\n")
+                print(f"Input:  {all_modality_csv_paths['joint']['train']} "
+                      f"(extra columns: {', '.join(joint_extra_features)})")
+                print(f"Input:  {all_modality_csv_paths['joint']['test']} "
+                      f"(extra columns: {', '.join(joint_extra_features)})")
+        print(f"Output: {PROCESSED_DATA_DIRECTORY / write_optimal_feature_count_csv_by_modality[modality]}")
+        print(f"Output: {PROCESSED_DATA_DIRECTORY / write_feature_ranking_csv_by_modality[modality]}")
+    print(f"Output: {IMAGE_DATA_DIRECTORY / write_optimal_feature_count_png}")
+    print(f"Output: {PROCESSED_DATA_DIRECTORY / write_optimal_feature_count_summary_csv}\n")
 
 
 def main() -> None:
@@ -361,7 +418,7 @@ def main() -> None:
         all_results[modality] = results
         results.to_csv(
             PROCESSED_DATA_DIRECTORY /
-            f"optimal_feature_count_{modality}_{dataset_name}.csv", index=False)
+            write_optimal_feature_count_csv_by_modality[modality], index=False)
         save_feature_ranking(modality, pooled_table, candidate_features)
 
         argmax_row, parsimonious_row = pick_best_n(results)
@@ -380,8 +437,8 @@ def main() -> None:
           f"peak)\n{'=' * 70}")
     print(summary_table.to_string(index=False))
     summary_table.to_csv(
-        PROCESSED_DATA_DIRECTORY / f"optimal_feature_count_summary_"
-        f"{dataset_name}.csv", index=False)
+        PROCESSED_DATA_DIRECTORY / write_optimal_feature_count_summary_csv,
+        index=False)
 
     elapsed_s = time.perf_counter() - start_time_s
     print(f"\nTotal time: {elapsed_s:.1f} s ({elapsed_s / 60.0:.1f} min)")

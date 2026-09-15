@@ -6,18 +6,24 @@ real tests of gaze's marginal value. Top-N selection is redone inside
 each fold (never leaks the held-out subject); baseline is each fold's
 own majority-class rate.
 
-Inputs:
-- features_{robot,gaze,joint}_{train,test}_<dataset_name>.csv
-- features_all_{train,test}_<dataset_name>.csv
+Inputs (exact filenames in User Settings, read_*_csv):
+- 8 feature CSVs: features_{robot,gaze,joint,all}_{train,test}.csv
 
-Outputs:
-- data/processed_data/loso_feature_set_comparison_<dataset_name>.csv
-- data/processed_data/loso_feature_set_folds_<dataset_name>.csv
-- data/images/loso_feature_set_comparison_<dataset_name>.png
-- data/processed_data/loso_lead_time_sweep_<dataset_name>.csv (if
-  lead_time_sweep_s is non-empty)
-- data/processed_data/loso_lead_time_sweep_folds_<dataset_name>.csv
-- data/images/loso_lead_time_sweep_<dataset_name>.png
+Outputs (exact filenames in User Settings, write_*):
+- loso_feature_set_comparison.csv / .png
+- loso_feature_set_folds.csv
+- feature_importance_all.png (top_n_features ranking, fit once on the
+  full balanced "all" table -- separate from and not used by any LOSO
+  fold's own accuracy)
+- feature_importance_all_fold_s<subject>.png, one per held-out subject
+  in the base "all" LOSO run (naming PATTERN in User Settings) -- from
+  each fold's own model, no extra fit
+- loso_lead_time_sweep.csv / .png (if lead_time_sweep_s is non-empty)
+- loso_lead_time_sweep_folds.csv
+- confusion_matrix_loso_<variant>.png, one per feature-set variant
+  (naming PATTERN in User Settings, not a fixed filename -- the
+  variant list size depends on feature_sets_to_run/run_top_n_variants/
+  the lead-time sweep)
 
 Depends on:
 - classifier_feature_bank.py
@@ -48,14 +54,66 @@ PROCESSED_DATA_DIRECTORY = DATA_DIRECTORY / "processed_data"
 IMAGE_DATA_DIRECTORY = DATA_DIRECTORY / "images"
 
 # -------------------- User Settings --------------------
+# TODO explicit input filenames (data/processed_data/) -- each typed
+# out, not built from a dataset-name tag, so the exact file this script
+# reads is always visible here, not reconstructed mentally. Must match
+# whatever build_modality_feature_datasets.py's output_dataset_name
+# last wrote.
+read_robot_train_csv = "features_robot_train_W_1s.csv"
+read_robot_test_csv  = "features_robot_test_W_1s.csv"
+read_gaze_train_csv  = "features_gaze_train_W_1s.csv"
+read_gaze_test_csv   = "features_gaze_test_W_1s.csv"
+read_joint_train_csv = "features_joint_train_W_1s.csv"
+read_joint_test_csv  = "features_joint_test_W_1s.csv"
+read_all_train_csv   = "features_all_train_W_1s.csv"
+read_all_test_csv    = "features_all_test_W_1s.csv"
+
+# TODO explicit output filenames (data/processed_data/ for .csv,
+# data/images/ for .png) -- same reasoning as the inputs above.
+write_feature_set_comparison_csv = "loso_feature_set_comparison_W_1s.csv"
+write_feature_set_folds_csv = "loso_feature_set_folds_W_1s.csv"
+write_feature_set_comparison_png = "loso_feature_set_comparison_W_1s.png"
+write_feature_importance_all_png = "feature_importance_all_W_1s.png"
+
+# TODO one feature-importance plot PER HELD-OUT SUBJECT for the base
+# "all" LOSO run (9 subjects here, so 9 files) -- a naming PATTERN
+# (see CLAUDE.md), not one setting per file, since subject count can
+# change. {subject} is the held-out subject id.
+write_feature_importance_per_fold_png_pattern = \
+    "feature_importance_all_fold_s{subject}_W_1s.png"
+write_lead_time_sweep_csv = "loso_lead_time_sweep_W_1s.csv"
+write_lead_time_sweep_folds_csv = "loso_lead_time_sweep_folds_W_1s.csv"
+write_lead_time_sweep_png = "loso_lead_time_sweep_W_1s.png"
+
 # TODO how many top-ranked features each "_top" variant keeps [count].
-top_n_features = 10
+top_n_features = 20
+
+# TODO display-only label for plot titles -- NOT used to build any file
+# path (those are all explicit above). Keep it in sync with the tag in
+# the filenames above so titles stay accurate.
+dataset_label_for_titles = "W_1s"
+
+# TODO confusion-matrix filenames are one PER VARIANT (every entry of
+# feature_sets_to_run, x2 if run_top_n_variants, plus every lead-time
+# sweep point) -- an inherently dynamic list whose size depends on the
+# settings below, so this is a naming PATTERN, not a fixed filename
+# per file. {variant} is substituted with e.g. "robot", "robot_top20",
+# "robot_top20@lead4s".
+confusion_matrix_filename_pattern = "confusion_matrix_loso_{variant}_W_1s.png"
 
 # TODO drop known-confounded features from every feature set before
 # comparison -- matches find_optimal_feature_count.py / check_
 # overfitting_vs_feature_count.py / losho_classifier.py.
 exclude_positional_features = True
 exclude_force_features = True
+
+# TODO drop every feature whose VALUE is restricted to one coordinate
+# axis (name ends "_x"/"_y", e.g. mean_gaze_x, std_velocity_y) -- not
+# a magnitude/angle/correlation-xy that combines both axes (those keep
+# names like gaze_dispersion_rms, mean_gaze_speed, correlation_gaze_xy
+# and are unaffected). Independent of and overlaps with the two
+# toggles above (e.g. mean_gaze_x is both positional AND single-axis).
+exclude_single_axis_features = True
 
 # TODO which feature sets to evaluate; keys of build_feature_sets().
 feature_sets_to_run = ("robot", "gaze", "joint", "all")
@@ -67,17 +125,12 @@ run_top_n_variants = True
 # window_offset steps AHEAD from features at t. Must be multiples of
 # window_step_s, since the offset is applied in window steps. Empty
 # tuple skips the sweep.
-lead_time_sweep_s = (0.0, 4.0, 6.0, 8.0)
-window_step_s = 2.0  # TODO must match build_modality_feature_datasets.py
+lead_time_sweep_s = (0.0, 1.0, 2.0, 3.0)
+window_step_s = 1.0  # TODO must match build_modality_feature_datasets.py
 
 # TODO which feature sets enter the lead-time sweep -- any key of
 # build_feature_sets() (e.g. "robot", "all", "gaze_pure", ...).
 lead_time_feature_sets = ("robot", "all")
-
-# TODO which dataset's feature CSVs to read -- must match build_
-# modality_feature_datasets.py's output_dataset_name. Own setting now
-# (previously inherited from train_modality_classifiers.py).
-dataset_name = "W_2s"
 
 target_column = "trial_class_label"
 metadata_columns = [
@@ -91,15 +144,18 @@ metadata_columns = [
 classifier_name = "random_forest"
 classifier_kwargs = {"n_estimators": 300, "random_state": 42, "n_jobs": -1}
 
-# TODO input feature CSVs per modality, as written by build_modality_
-# feature_datasets.py.
+# Built from the explicit read_*_csv settings above -- one dict lookup
+# site (modality_table(), all_modality_table()) instead of re-typing
+# the four-way branch everywhere a modality's paths are needed.
 all_modality_csv_paths = {
-    modality: {
-        split: PROCESSED_DATA_DIRECTORY /
-               f"features_{modality}_{split}_{dataset_name}.csv"
-        for split in ("train", "test")
-    }
-    for modality in ("robot", "gaze", "joint", "all")
+    "robot": {"train": PROCESSED_DATA_DIRECTORY / read_robot_train_csv,
+              "test": PROCESSED_DATA_DIRECTORY / read_robot_test_csv},
+    "gaze": {"train": PROCESSED_DATA_DIRECTORY / read_gaze_train_csv,
+             "test": PROCESSED_DATA_DIRECTORY / read_gaze_test_csv},
+    "joint": {"train": PROCESSED_DATA_DIRECTORY / read_joint_train_csv,
+              "test": PROCESSED_DATA_DIRECTORY / read_joint_test_csv},
+    "all": {"train": PROCESSED_DATA_DIRECTORY / read_all_train_csv,
+            "test": PROCESSED_DATA_DIRECTORY / read_all_test_csv},
 }
 
 # TODO fraction of the smaller class drawn per class for each fold's
@@ -164,6 +220,62 @@ FORCE_FEATURE_NAMES["all"] = (
     {f"joint_{name}" for name in FORCE_FEATURE_NAMES["joint"]}
 )
 
+# Single-axis (x-only or y-only) feature names, verified against each
+# one's own formula/docstring, not just name pattern -- e.g.
+# mean_gaze_velocity_x is included (its OUTPUT is x-only) even though
+# its formula also passes Gy in for internal cleaning/sync; combined-
+# axis features (hypot/correlation-xy/angle) are excluded. Heavily
+# overlaps POSITIONAL_FEATURE_NAMES on purpose -- this is an
+# independent, self-contained category (see exclude_single_axis_
+# features setting above), not a diff against the other two.
+SINGLE_AXIS_FEATURE_NAMES = {
+    "robot": {
+        "mean_position_x", "mean_position_y", "std_position_x",
+        "std_position_y", "variance_position_x", "variance_position_y",
+        "minimum_position_x", "maximum_position_x", "range_position_x",
+        "minimum_position_y", "maximum_position_y", "range_position_y",
+        "median_position_x", "median_position_y", "iqr_position_x",
+        "iqr_position_y", "mad_position_x", "mad_position_y",
+        "skewness_position_x", "skewness_position_y",
+        "kurtosis_position_x", "kurtosis_position_y",
+        "mean_velocity_x", "mean_velocity_y", "std_velocity_x",
+        "std_velocity_y", "position_x_shannon_entropy",
+        "position_y_shannon_entropy", "position_x_mean_crossing_count",
+        "position_y_mean_crossing_count",
+        "position_x_lag1_autocorrelation",
+        "position_y_lag1_autocorrelation", "mean_force_x", "mean_force_y",
+        "std_force_x", "std_force_y",
+    },
+    "gaze": {
+        "mean_gaze_x", "mean_gaze_y", "std_gaze_x", "std_gaze_y",
+        "variance_gaze_x", "variance_gaze_y", "minimum_gaze_x",
+        "maximum_gaze_x", "range_gaze_x", "minimum_gaze_y",
+        "maximum_gaze_y", "range_gaze_y", "median_gaze_x", "median_gaze_y",
+        "iqr_gaze_x", "iqr_gaze_y", "mad_gaze_x", "mad_gaze_y",
+        "skewness_gaze_x", "skewness_gaze_y", "kurtosis_gaze_x",
+        "kurtosis_gaze_y", "mean_gaze_velocity_x", "mean_gaze_velocity_y",
+        "std_gaze_velocity_x", "std_gaze_velocity_y",
+        "gaze_x_shannon_entropy", "gaze_y_shannon_entropy",
+        "gaze_x_mean_crossing_count", "gaze_y_mean_crossing_count",
+        "gaze_x_lag1_autocorrelation", "gaze_y_lag1_autocorrelation",
+        "mean_relative_x", "mean_relative_y", "std_relative_x",
+        "std_relative_y", "gaze_ee_x_correlation", "gaze_ee_y_correlation",
+        "max_x_cross_correlation", "x_lead_at_max_correlation_s",
+        "max_y_cross_correlation", "y_lead_at_max_correlation_s",
+    },
+    "joint": {
+        "mean_relative_x", "mean_relative_y", "std_relative_x",
+        "std_relative_y", "gaze_ee_x_correlation", "gaze_ee_y_correlation",
+        "max_x_cross_correlation", "x_lead_at_max_correlation_s",
+        "max_y_cross_correlation", "y_lead_at_max_correlation_s",
+    },
+}
+SINGLE_AXIS_FEATURE_NAMES["all"] = (
+    {f"robot_{name}" for name in SINGLE_AXIS_FEATURE_NAMES["robot"]} |
+    {f"gaze_{name}" for name in SINGLE_AXIS_FEATURE_NAMES["gaze"]} |
+    {f"joint_{name}" for name in SINGLE_AXIS_FEATURE_NAMES["joint"]}
+)
+
 
 # Duplicated from train_modality_classifiers.py rather than imported --
 # standalone-script convention (see e.g. losho_classifier.py), so this
@@ -207,6 +319,8 @@ def apply_confound_exclusion(features: list, modality: str) -> list:
         confounded |= POSITIONAL_FEATURE_NAMES[modality]
     if exclude_force_features:
         confounded |= FORCE_FEATURE_NAMES[modality]
+    if exclude_single_axis_features:
+        confounded |= SINGLE_AXIS_FEATURE_NAMES[modality]
     return [f for f in features if f not in confounded]
 
 
@@ -264,15 +378,12 @@ def robot_dependent_gaze_features() -> set:
 
 
 def all_modality_table() -> pd.DataFrame:
-    """features_all_{train,test}_<dataset_name>.csv, written by build_
-    modality_feature_dataset_all.py -- gaze+robot+joint (249 features,
-    bank-prefixed) already combined, pooled the same way modality_
-    table() pools the single-modality CSVs."""
-    train_table = pd.read_csv(
-        PROCESSED_DATA_DIRECTORY / f"features_all_train_{dataset_name}.csv")
-    test_table = pd.read_csv(
-        PROCESSED_DATA_DIRECTORY / f"features_all_test_{dataset_name}.csv")
-    return pd.concat([train_table, test_table], ignore_index=True)
+    """read_all_train_csv/read_all_test_csv -- gaze+robot+joint (249
+    features, bank-prefixed) already combined, pooled the same way
+    modality_table() pools the single-modality CSVs. Same as
+    modality_table("all"); kept separate only because build_feature_
+    sets() needs this table AND robot/gaze/joint tables together."""
+    return modality_table("all")
 
 
 def build_feature_sets() -> dict:
@@ -360,11 +471,18 @@ def shift_labels_forward(table: pd.DataFrame, window_offset: int):
 
 
 def run_loso(set_name: str, table: pd.DataFrame, feature_columns: list,
-             keep_top_n: int = None, label_column: str = None) -> tuple:
+             keep_top_n: int = None, label_column: str = None,
+             on_fold_model: callable = None) -> tuple:
     """LOSO over every subject. Returns (summary_row, fold_rows,
     pooled_true, pooled_predicted) -- the last two are every held-out
     subject's true/predicted label, concatenated in fold order, for
-    building a confusion matrix without refitting."""
+    building a confusion matrix without refitting.
+
+    on_fold_model, if given, is called as
+    on_fold_model(held_out_subject, model, fold_features) right after
+    each fold's own model is fit -- e.g. to plot that fold's feature
+    importances -- reusing the model already fit for that fold's
+    prediction, not an extra fit."""
     label_column = label_column or target_column
     subjects = sorted(int(s) for s in table["subject"].unique())
     class_order = sorted(table[label_column].unique())
@@ -388,6 +506,8 @@ def run_loso(set_name: str, table: pd.DataFrame, feature_columns: list,
 
         model = build_classifier(classifier_name, **classifier_kwargs)
         model.fit(train_table[fold_features], train_table[label_column])
+        if on_fold_model is not None:
+            on_fold_model(held_out_subject, model, fold_features)
         predicted = model.predict(test_table[fold_features])
 
         fold_accuracy = accuracy_score(test_table[label_column], predicted)
@@ -488,7 +608,7 @@ def plot_comparison(summary_table: pd.DataFrame, output_path: Path) -> None:
     axes.set_xlabel("Accuracy")
     axes.set_xlim(0.0, 1.0)
     axes.grid(axis="x", alpha=0.3)
-    axes.set_title(f"LOSO by feature set -- {dataset_name}")
+    axes.set_title(f"LOSO by feature set -- {dataset_label_for_titles}")
     axes.legend(loc="lower right", fontsize=8)
     fig.tight_layout()
     fig.savefig(output_path, dpi=150)
@@ -511,11 +631,45 @@ def plot_lead_time_sweep(sweep_table: pd.DataFrame, output_path: Path) -> None:
     axes.set_ylim(0.4, 1.0)
     axes.grid(alpha=0.3)
     axes.set_title(f"Anticipation: predicting label(t + lead) -- "
-                   f"{dataset_name}, top {top_n_features} features")
+                   f"{dataset_label_for_titles}, top {top_n_features} "
+                   f"features")
     axes.legend(fontsize=8)
     fig.tight_layout()
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
+
+
+def plot_feature_importance(
+        model, feature_columns: list, title: str, output_path: Path) -> None:
+    """Top top_n_features bar chart from an already-fit model's
+    feature_importances_ -- same style as train_simple_classifier.py's
+    plot_feature_importance()."""
+    ranking = pd.Series(
+        model.feature_importances_, index=feature_columns
+    ).sort_values(ascending=False)
+    top_ranking = ranking.head(top_n_features).iloc[::-1]
+    fig, ax = plt.subplots(figsize=(8, 0.35 * len(top_ranking) + 1.5))
+    ax.barh(top_ranking.index, top_ranking.values)
+    ax.set_xlabel("Random forest feature importance")
+    ax.set_title(title)
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+
+
+def save_fold_feature_importance(held_out_subject, model, feature_columns):
+    """run_loso() on_fold_model callback: plot this fold's own feature-
+    importance ranking, from the model already fit for that fold's
+    prediction -- no extra fit, no leakage beyond what that fold
+    already uses."""
+    path = (IMAGE_DATA_DIRECTORY /
+            write_feature_importance_per_fold_png_pattern.format(
+                subject=held_out_subject))
+    plot_feature_importance(
+        model, feature_columns,
+        f"Top {top_n_features} features -- all, held out s"
+        f"{held_out_subject} ({dataset_label_for_titles})",
+        path)
 
 
 def plot_confusion_matrix(
@@ -525,8 +679,9 @@ def plot_confusion_matrix(
     display = ConfusionMatrixDisplay(matrix, display_labels=class_order)
     fig, axes = plt.subplots(figsize=(4.5, 5.2))
     display.plot(ax=axes, cmap="Blues", colorbar=False, values_format="d")
-    axes.set_title(f"LOSO pooled confusion matrix\n{set_name} ({dataset_name})",
-                   fontsize=9)
+    axes.set_title(
+        f"LOSO pooled confusion matrix\n{set_name} "
+        f"({dataset_label_for_titles})", fontsize=9)
 
     report_dict = classification_report(
         pooled_true, pooled_predicted, labels=class_order, output_dict=True,
@@ -545,13 +700,22 @@ def plot_confusion_matrix(
 
 def main() -> None:
     start_time_s = time.perf_counter()
-    print(f"Input:  features_{{robot,gaze,joint,all}}_{{train,test}}_"
-          f"{dataset_name}.csv")
-    print(f"Output: loso_feature_set_comparison_{dataset_name}.{{csv,png}}")
-    print(f"Output: loso_feature_set_folds_{dataset_name}.csv")
+    for path in all_modality_csv_paths.values():
+        print(f"Input:  {path['train']}")
+        print(f"Input:  {path['test']}")
+    print(f"Output: {PROCESSED_DATA_DIRECTORY / write_feature_set_comparison_csv}")
+    print(f"Output: {PROCESSED_DATA_DIRECTORY / write_feature_set_folds_csv}")
+    print(f"Output: {IMAGE_DATA_DIRECTORY / write_feature_set_comparison_png}")
+    if "all" in feature_sets_to_run:
+        print(f"Output: {IMAGE_DATA_DIRECTORY / write_feature_importance_all_png}")
+        print(f"Output: {IMAGE_DATA_DIRECTORY / write_feature_importance_per_fold_png_pattern} "
+              f"(one per held-out subject)")
     if lead_time_sweep_s:
-        print(f"Output: loso_lead_time_sweep_{dataset_name}.{{csv,png}}")
-        print(f"Output: loso_lead_time_sweep_folds_{dataset_name}.csv")
+        print(f"Output: {PROCESSED_DATA_DIRECTORY / write_lead_time_sweep_csv}")
+        print(f"Output: {PROCESSED_DATA_DIRECTORY / write_lead_time_sweep_folds_csv}")
+        print(f"Output: {IMAGE_DATA_DIRECTORY / write_lead_time_sweep_png}")
+    print(f"Output: {IMAGE_DATA_DIRECTORY / confusion_matrix_filename_pattern} "
+          f"(one per variant)")
     print()
 
     feature_sets = build_feature_sets()
@@ -566,8 +730,12 @@ def main() -> None:
                 (f"{set_name}_top{top_n_features}", top_n_features))
 
         for variant_name, keep_top_n in variants:
+            fold_callback = (
+                save_fold_feature_importance
+                if set_name == "all" and keep_top_n is None else None)
             summary_row, variant_folds, pooled_true, pooled_predicted = \
-                run_loso(variant_name, table, feature_columns, keep_top_n)
+                run_loso(variant_name, table, feature_columns, keep_top_n,
+                         on_fold_model=fold_callback)
             summary_rows.append(summary_row)
             fold_rows.extend(variant_folds)
             print(f"  {variant_name:<32} n={summary_row['feature_count']:>3}  "
@@ -577,23 +745,40 @@ def main() -> None:
             plot_confusion_matrix(
                 variant_name, pooled_true, pooled_predicted,
                 summary_row["class_order"],
-                IMAGE_DATA_DIRECTORY /
-                f"confusion_matrix_loso_{variant_name}_{dataset_name}.png")
+                IMAGE_DATA_DIRECTORY / confusion_matrix_filename_pattern.format(
+                    variant=variant_name))
+
+        if set_name == "all":
+            # One extra fit on the full balanced table, purely for the
+            # ranking plot -- separate from every LOSO fold above (each
+            # of which ranks fresh on its own training data only), so
+            # this never leaks a held-out subject into a fold's result.
+            balanced_full = draw_balanced_train(table, random_seed)
+            ranking_model = build_classifier(
+                classifier_name, **classifier_kwargs)
+            ranking_model.fit(
+                balanced_full[feature_columns], balanced_full[target_column])
+            feature_importance_path = (
+                IMAGE_DATA_DIRECTORY / write_feature_importance_all_png)
+            plot_feature_importance(
+                ranking_model, feature_columns,
+                f"Top {top_n_features} features -- all "
+                f"({dataset_label_for_titles})",
+                feature_importance_path)
+            print(f"  -> {feature_importance_path.name}")
 
     if lead_time_sweep_s:
         sweep_summary, sweep_folds = run_lead_time_sweep(feature_sets)
         sweep_summary_path = (
-            PROCESSED_DATA_DIRECTORY /
-            f"loso_lead_time_sweep_{dataset_name}.csv")
+            PROCESSED_DATA_DIRECTORY / write_lead_time_sweep_csv)
         sweep_folds_path = (
-            PROCESSED_DATA_DIRECTORY /
-            f"loso_lead_time_sweep_folds_{dataset_name}.csv")
+            PROCESSED_DATA_DIRECTORY / write_lead_time_sweep_folds_csv)
         PROCESSED_DATA_DIRECTORY.mkdir(parents=True, exist_ok=True)
         pd.DataFrame(sweep_summary).to_csv(sweep_summary_path, index=False)
         pd.DataFrame(sweep_folds).to_csv(sweep_folds_path, index=False)
         plot_lead_time_sweep(
             pd.DataFrame(sweep_summary),
-            IMAGE_DATA_DIRECTORY / f"loso_lead_time_sweep_{dataset_name}.png")
+            IMAGE_DATA_DIRECTORY / write_lead_time_sweep_png)
         print(f"\nWrote:\n  {sweep_summary_path.name}\n"
               f"  {sweep_folds_path.name}")
 
@@ -609,17 +794,15 @@ def main() -> None:
 
     PROCESSED_DATA_DIRECTORY.mkdir(parents=True, exist_ok=True)
     IMAGE_DATA_DIRECTORY.mkdir(parents=True, exist_ok=True)
-    summary_path = (PROCESSED_DATA_DIRECTORY /
-                    f"loso_feature_set_comparison_{dataset_name}.csv")
-    folds_path = (PROCESSED_DATA_DIRECTORY /
-                  f"loso_feature_set_folds_{dataset_name}.csv")
-    image_path = (IMAGE_DATA_DIRECTORY /
-                  f"loso_feature_set_comparison_{dataset_name}.png")
+    summary_path = PROCESSED_DATA_DIRECTORY / write_feature_set_comparison_csv
+    folds_path = PROCESSED_DATA_DIRECTORY / write_feature_set_folds_csv
+    image_path = IMAGE_DATA_DIRECTORY / write_feature_set_comparison_png
     summary_table.to_csv(summary_path, index=False)
     fold_table.to_csv(folds_path, index=False)
     plot_comparison(summary_table, image_path)
 
-    print(f"\n{'=' * 78}\nLOSO feature-set comparison ({dataset_name})\n"
+    print(f"\n{'=' * 78}\nLOSO feature-set comparison "
+          f"({dataset_label_for_titles})\n"
           f"{'=' * 78}")
     print(summary_table[[
         "modality", "feature_count", "accuracy", "macro_f1",

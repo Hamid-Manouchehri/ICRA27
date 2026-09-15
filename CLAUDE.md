@@ -25,6 +25,16 @@ precedence over generic defaults. The most load-bearing rules from it:
   tunables, sorted most- to least-important. Follow this pattern in new
   scripts; don't scatter tunables through the logic.
   And the block would ends with `# -------------------- End User Settings --------------------`
+- Every input/output file path is an explicit literal filename declared
+  in User Settings (`read_*`/`write_*` variables), not auto-rendered from
+  a dataset-name tag substituted into an f-string -- the exact file a
+  script will touch must be visible by reading its settings, not by
+  mentally substituting a tag. The one exception is a loop-generated set
+  of outputs (e.g. one confusion-matrix PNG per feature-set variant),
+  where the full list can't be known ahead of the run: declare a naming
+  PATTERN setting instead (e.g. `"confusion_matrix_{variant}.png"`), not
+  a fixed filename per file. A separate display-only label setting is
+  fine for plot titles, but it must never be used to build a file path.
 - Variable names carry units and frames as suffixes throughout: `_m`, `_m_s`,
   `_n` (newtons), `_deg`, `_deg_s`, `_rad_s`, `_xy_m`, `_robot_xy_m`. Keep
   this up when adding code — it's how frame/unit bugs get caught by reading.

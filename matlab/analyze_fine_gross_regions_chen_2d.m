@@ -19,9 +19,12 @@
 %   colored by its detected region (fine/gross), reference centerline
 %   underneath for context and a dashed vertical line at the region
 %   boundary so the split can be checked by eye.
-%   Figure 2: grouped bar charts (2x2 tiles) -- mean tracking error,
-%   mean force, mean speed, and time spent in region -- x-axis is the
-%   configured damping range, bars grouped by region.
+%   Figure 2: bar charts (2x3 tiles) -- mean tracking error, mean
+%   force, mean speed, and time spent in region (dwell time, region-
+%   split grouped bars; tile 5 repeats tile 4's data so it sits beside
+%   the whole-trial-duration tile), plus each trial's whole-trial
+%   duration (single bar, not region-split) -- x-axis is the
+%   configured damping range throughout.
 %   Figure 3: boxplot of the controller's own adaptive damping
 %   (bd_applied_Ns_m), grouped by region within each configured range.
 %   A numeric summary table is printed to the command window.
@@ -98,7 +101,8 @@ close all;
 clc;
 
 script_directory = fileparts(mfilename('fullpath'));
-raw_data_directory = fullfile(script_directory, '..', 'data', 'raw_data');
+raw_data_directory = fullfile(script_directory, '..', 'data', ...
+    'raw_data', 'old_data');
 
 %% User Settings
 % TODO the five configured-damping-range trials, in display order.
@@ -210,6 +214,7 @@ trials = cell(1, trial_count);
 sample_is_fine = cell(1, trial_count);
 sample_is_excluded = cell(1, trial_count);
 trial_metrics = cell(1, trial_count);
+total_time_s = zeros(trial_count, 1);
 
 fprintf('\nTrial trimming to motion span:\n');
 
@@ -218,6 +223,7 @@ for trial_idx = 1:trial_count
     [trials{trial_idx}, trim_info] = trim_to_motion_span( ...
         trials{trial_idx}, moving_speed_threshold_m_s, ...
         minimum_motion_run_s);
+    total_time_s(trial_idx) = trim_info.kept_duration_s;
 
     fprintf(['  %-8s kept %6.2f s of %6.2f s (cut %.2f s lead-in, ' ...
         '%.2f s tail), samples %d-%d of %d.\n'], ...
@@ -302,10 +308,17 @@ for trial_idx = 1:trial_count
     time_in_region_s(trial_idx, :) = trial_metrics{trial_idx}.time_in_region_s;
 end
 
+% Each region's share of CLASSIFIED time (fine + gross, excluding the
+% transition band) -- unlike time_in_region_s, these two columns sum to
+% 100% by construction, so trials stay comparable despite differing
+% total_time_s.
+classified_time_s = sum(time_in_region_s, 2);
+region_time_fraction_pct = 100 * time_in_region_s ./ classified_time_s;
+
 region_legend = {'Fine', 'Gross'};
 
 figure('Name', 'Performance by region and damping range', 'Color', 'w');
-tiledlayout(2, 2, 'TileSpacing', 'compact', 'Padding', 'compact');
+tiledlayout(2, 3, 'TileSpacing', 'compact', 'Padding', 'compact');
 
 nexttile;
 bar(mean_error_mm, 'grouped');
@@ -351,6 +364,23 @@ xlabel('Configured damping range [N s/m]');
 ylabel('Time in region [s]');
 title('Dwell time (all samples, not moving-gated)');
 legend(region_legend, 'Location', 'best');
+
+nexttile;
+bar(time_in_region_s, 'grouped');
+set(gca, 'XTickLabel', trial_labels);
+grid on;
+xlabel('Configured damping range [N s/m]');
+ylabel('Time in region [s]');
+title('Fine vs. gross time (dwell time, not moving-gated)');
+legend(region_legend, 'Location', 'best');
+
+nexttile;
+bar(total_time_s);
+set(gca, 'XTickLabel', trial_labels);
+grid on;
+xlabel('Configured damping range [N s/m]');
+ylabel('Total trial time [s]');
+title('Whole-trial duration (trimmed motion span)');
 
 sgtitle('Performance by path region and configured damping range');
 
@@ -405,6 +435,13 @@ print_region_row('Time in fine [s]', '%22.2f', time_in_region_s(:, 1));
 print_region_row('Time in gross [s]', '%22.2f', time_in_region_s(:, 2));
 fprintf(['  Dwell time is not moving-gated; the four metrics above it ' ...
     'are (moving samples only).\n']);
+fprintf('\n');
+print_region_row('Fine share of time [%]', '%22.1f', ...
+    region_time_fraction_pct(:, 1));
+print_region_row('Gross share of time [%]', '%22.1f', ...
+    region_time_fraction_pct(:, 2));
+fprintf('\n');
+print_region_row('Total trial time [s]', '%22.2f', total_time_s);
 fprintf('\n');
 for trial_idx = 1:trial_count
     for region_idx = 1:2
