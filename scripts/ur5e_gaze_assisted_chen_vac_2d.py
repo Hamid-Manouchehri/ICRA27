@@ -272,7 +272,7 @@ write_data_csv_path = (
     Path(__file__).resolve().parent.parent /
     "data" /
     "raw_data" /
-    "ur5e_gaze_assisted_chen_vac_2d_test.csv"
+    "ur5e_gaze_assisted_chen_vac_2d_wide_fine_gross_shape_test.csv"
 )
 
 # TODO Tobii output CSV path [file path]; one row per Tobii callback.
@@ -282,7 +282,7 @@ tobii_data_csv_path = (
     Path(__file__).resolve().parent.parent /
     "data" /
     "raw_data" /
-    "tobii_gaze_assisted_chen_vac_2d_test.csv"
+    "tobii_gaze_assisted_chen_vac_2d_wide_fine_gross_shape_test.csv"
 )
 
 # --- Classifier-gated damping bounds (the addition over Chen) ---
@@ -311,7 +311,7 @@ read_calibration_json_path = (
     Path(__file__).resolve().parent.parent /
     "data" /
     "calibrations" /
-    "tobii_coppelia_reference_calibration_wide_fine_gross_shape_clockwise_s18.json"
+    "tobii_coppelia_reference_calibration_wide_fine_gross_shape_clockwise_s14.json"
 )
 
 # TODO damping bounds [N s/m] per predicted class, each low < high.
