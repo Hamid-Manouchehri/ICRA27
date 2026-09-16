@@ -66,9 +66,9 @@ processed_data_directory = fullfile(script_directory, '..', 'data', ...
 % TODO the two CSVs written by train_logistic_regression.py -- must
 % match its write_predictions_csv / write_coefficients_csv settings.
 read_predictions_csv_file = fullfile(processed_data_directory, ...
-    'logistic_regression_held_out_fine_gross_shape_robot_W_1s_predictions.csv');
+    'logistic_regression_held_out_fine_gross_shape_robot_1win_ahead_W_1s_predictions.csv');
 read_coefficients_csv_file = fullfile(processed_data_directory, ...
-    'logistic_regression_held_out_fine_gross_shape_robot_W_1s_coefficients.csv');
+    'logistic_regression_held_out_fine_gross_shape_robot_1win_ahead_W_1s_coefficients.csv');
 
 % TODO must match train_logistic_regression.py's target_column setting.
 target_column_name = 'trial_class_label';

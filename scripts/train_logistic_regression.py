@@ -34,13 +34,13 @@ MODEL_DIRECTORY = PROJECT_ROOT / "data" / "models"
 
 # -------------------- Start User Settings --------------------
 # TODO explicit input filenames (data/processed_data/).
-read_train_csv = "features_all_train_held_out_fine_gross_shape_W_1s.csv"
-read_test_csv = "features_all_test_held_out_fine_gross_shape_W_1s.csv"
+read_train_csv = "features_all_train_held_out_fine_gross_shape_1win_ahead_W_1s.csv"
+read_test_csv = "features_all_test_held_out_fine_gross_shape_1win_ahead_W_1s.csv"
 
 # TODO explicit output filenames (all written to data/processed_data/).
-write_model_file = "logistic_regression_held_out_fine_gross_shape_robot_W_1s.joblib"
-write_coefficients_csv = "logistic_regression_held_out_fine_gross_shape_robot_W_1s_coefficients.csv"
-write_predictions_csv = "logistic_regression_held_out_fine_gross_shape_robot_W_1s_predictions.csv"
+write_model_file = "logistic_regression_held_out_fine_gross_shape_robot_1win_ahead_W_1s.joblib"
+write_coefficients_csv = "logistic_regression_held_out_fine_gross_shape_robot_1win_ahead_W_1s_coefficients.csv"
+write_predictions_csv = "logistic_regression_held_out_fine_gross_shape_robot_1win_ahead_W_1s_predictions.csv"
 
 # TODO the EXACT features to fit on -- nothing else is used, nothing is
 # ranked/selected automatically.

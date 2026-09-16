@@ -1,9 +1,11 @@
 """build_holdout_feature_dataset.py -- Re-pool an existing feature
-train/test pair and re-split it by excluding one or more values of a
-chosen grouping column (subject/shape/bandwidth/direction), instead of
-the original random per-class draw. Output has the same columns as the
-input, so train_logistic_regression.py (or any other training script)
-can point read_train_csv/read_test_csv at it unchanged.
+train/test pair, optionally shift each window's label forward within
+its own trial (num_win_label_moveforward), then re-split by excluding
+one or more values of a chosen grouping column (subject/shape/
+bandwidth/direction), instead of the original random per-class draw.
+Output has the same columns as the input, so train_logistic_
+regression.py (or any other training script) can point
+read_train_csv/read_test_csv at it unchanged.
 
 Inputs (exact filenames in User Settings, read_*_csv):
 - one feature train/test CSV pair (e.g. features_all_{train,test}_W_1s.csv)
@@ -40,8 +42,8 @@ read_test_csv = "features_all_test_W_1s.csv"
 # Rename these yourself when held_out_column/_values change below, so a
 # new holdout run doesn't silently overwrite a previous one (no
 # auto-generated tag in the filename, per this project's convention).
-write_train_csv = "features_all_train_held_out_fine_gross_shape_W_1s.csv"
-write_test_csv = "features_all_test_held_out_fine_gross_shape_W_1s.csv"
+write_train_csv = "features_all_train_held_out_fine_gross_shape_1win_ahead_W_1s.csv"
+write_test_csv = "features_all_test_held_out_fine_gross_shape_1win_ahead_W_1s.csv"
 
 # TODO which column to hold out by, and which of its values become the
 # TEST set -- everything else becomes TRAIN. held_out_values must match
@@ -57,6 +59,15 @@ write_test_csv = "features_all_test_held_out_fine_gross_shape_W_1s.csv"
 held_out_column = "shape"
 held_out_values = ["fine_gross"]
 
+# TODO shift every window's label forward by this many windows within
+# its own trial (subject+bandwidth+shape+direction) -- window i's
+# FEATURES end up paired with the label from window i + this many
+# windows later, so a classifier trains to anticipate an upcoming
+# label change instead of reading off the current one. 0 = no shift
+# (unchanged behavior). A trial's last N windows have no later window
+# in the same trial and are dropped. [count, windows], must be >= 0.
+num_win_label_moveforward = 1
+
 # TODO after excluding held_out_values, draw a class-balanced TRAINING
 # set from what's left (matches build_modality_feature_datasets.py's
 # own convention) -- set False to keep every remaining row as train,
@@ -67,6 +78,25 @@ train_fraction_of_smallest_class = 0.5
 target_column = "trial_class_label"  # TODO label column
 random_seed = 42
 # -------------------- End User Settings --------------------
+
+
+def shift_labels_forward(
+        table: pd.DataFrame, window_offset: int) -> pd.DataFrame:
+    """Replace each window's target_column value with the label
+    window_offset windows later in the SAME trial (subject, bandwidth,
+    shape, direction) -- so a window's FEATURES pair with a future
+    window's label. Windows with no later window in their trial (the
+    last window_offset of each trial) are dropped."""
+    trial_columns = ["subject", "bandwidth", "shape", "direction"]
+    future_labels = table[
+        trial_columns + ["window_index", target_column]].copy()
+    future_labels["window_index"] -= window_offset
+    future_labels = future_labels.rename(
+        columns={target_column: "_future_label"})
+    shifted_table = table.drop(columns=[target_column]).merge(
+        future_labels, on=trial_columns + ["window_index"],
+        how="inner", validate="one_to_one")
+    return shifted_table.rename(columns={"_future_label": target_column})
 
 
 def main() -> None:
@@ -81,8 +111,23 @@ def main() -> None:
     print(f"Output: {write_test_path}")
     print()
 
+    if num_win_label_moveforward < 0:
+        raise ValueError(
+            f"num_win_label_moveforward must be >= 0, got "
+            f"{num_win_label_moveforward}.")
+
     pooled_table = pd.concat(
         [pd.read_csv(train_path), pd.read_csv(test_path)], ignore_index=True)
+
+    if num_win_label_moveforward > 0:
+        pre_shift_count = len(pooled_table)
+        pooled_table = shift_labels_forward(
+            pooled_table, num_win_label_moveforward)
+        print(f"Shifted labels forward {num_win_label_moveforward} "
+              f"window(s) within each trial: {pre_shift_count} -> "
+              f"{len(pooled_table)} windows "
+              f"({pre_shift_count - len(pooled_table)} dropped, no later "
+              f"window in their trial).")
 
     if held_out_column not in pooled_table.columns:
         raise ValueError(

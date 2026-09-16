@@ -73,14 +73,14 @@ chen_manual_directions = ("clockwise", "counter_clockwise")
 # the exact file this script writes is always visible here. Change
 # these (not dataset_name above) when you change window_size_s/
 # window_step_s below, so the new run doesn't overwrite today's CSVs.
-write_robot_train_csv = "features_robot_train_W_2s.csv"
-write_robot_test_csv = "features_robot_test_W_2s.csv"
-write_gaze_train_csv = "features_gaze_train_W_2s.csv"
-write_gaze_test_csv = "features_gaze_test_W_2s.csv"
-write_joint_train_csv = "features_joint_train_W_2s.csv"
-write_joint_test_csv = "features_joint_test_W_2s.csv"
-write_all_train_csv = "features_all_train_W_2s.csv"
-write_all_test_csv = "features_all_test_W_2s.csv"
+write_robot_train_csv = "features_robot_train_W_1s.csv"
+write_robot_test_csv = "features_robot_test_W_1s.csv"
+write_gaze_train_csv = "features_gaze_train_W_1s.csv"
+write_gaze_test_csv = "features_gaze_test_W_1s.csv"
+write_joint_train_csv = "features_joint_train_W_1s.csv"
+write_joint_test_csv = "features_joint_test_W_1s.csv"
+write_all_train_csv = "features_all_train_W_1s.csv"
+write_all_test_csv = "features_all_test_W_1s.csv"
 
 # TODO chen_manual INPUT filename PATTERNS -- one robot/gaze/
 # calibration file PER TRIAL (chen_manual_subjects x _bandwidths x
@@ -96,7 +96,13 @@ chen_manual_calibration_json_pattern = (
 # TODO display/bookkeeping label only -- feature_cache/ subdirectory
 # prefix and a field in the run manifest JSON. NOT used to build any of
 # the explicit read/write filenames above or below.
-output_dataset_name = "W_2s"
+output_dataset_name = "W_1s"
+
+# TODO --- Windowing ---
+window_size_s = 1.0
+window_step_s = 1.0  # overlap_fraction = 1 - (window_step_s / window_size_s)
+minimum_gaze_samples = 6
+minimum_robot_samples = 10
 
 # TODO which modality tables to build/write: "robot"|"gaze"|"joint"|
 # "all" (all 3 banks combined into one row, column names prefixed by
@@ -139,12 +145,6 @@ write_paths = {
     "all": {"train": PROCESSED_DATA_DIRECTORY / write_all_train_csv,
             "test": PROCESSED_DATA_DIRECTORY / write_all_test_csv},
 }
-
-# --- Windowing ---
-window_size_s = 2.0
-window_step_s = 2.0  # overlap_fraction = 1 - (window_step_s / window_size_s)
-minimum_gaze_samples = 6
-minimum_robot_samples = 10
 
 # --- Ground-truth class label ---
 # TODO drop windows within this margin [s] of a label change. 1.5 suited
