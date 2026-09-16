@@ -40,8 +40,8 @@ read_test_csv = "features_all_test_W_1s.csv"
 # Rename these yourself when held_out_column/_values change below, so a
 # new holdout run doesn't silently overwrite a previous one (no
 # auto-generated tag in the filename, per this project's convention).
-write_train_csv = "features_all_train_holdout_fine_gross_shape_W_1s.csv"
-write_test_csv = "features_all_test_holdout_fine_gross_shape_W_1s.csv"
+write_train_csv = "features_all_train_held_out_fine_gross_shape_W_1s.csv"
+write_test_csv = "features_all_test_held_out_fine_gross_shape_W_1s.csv"
 
 # TODO which column to hold out by, and which of its values become the
 # TEST set -- everything else becomes TRAIN. held_out_values must match

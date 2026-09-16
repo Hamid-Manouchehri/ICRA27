@@ -10,11 +10,12 @@ Outputs (exact filenames in User Settings, write_*):
 - logistic_regression_<tag>.joblib (scaler + fitted model + settings)
 - logistic_regression_<tag>_coefficients.csv (one row per feature)
 - logistic_regression_<tag>_predictions.csv (test set: true label,
-  predicted label, per-class predicted probability)
+  predicted label, per-class predicted probability, plus
+  identifying_columns/position_columns for trace-back/plotting)
 - printed classification report
 
 Depends on:
-- build_modality_feature_datasets.py (writes the read_*_csv files)
+- build_holdout_feature_dataset.py (writes the read_*_csv files)
 """
 
 import time
@@ -33,13 +34,13 @@ MODEL_DIRECTORY = PROJECT_ROOT / "data" / "models"
 
 # -------------------- Start User Settings --------------------
 # TODO explicit input filenames (data/processed_data/).
-read_train_csv = "features_all_train_W_1s.csv"
-read_test_csv = "features_all_test_W_1s.csv"
+read_train_csv = "features_all_train_held_out_fine_gross_shape_W_1s.csv"
+read_test_csv = "features_all_test_held_out_fine_gross_shape_W_1s.csv"
 
 # TODO explicit output filenames (all written to data/processed_data/).
-write_model_file = "logistic_regression_robot_W_1s.joblib"
-write_coefficients_csv = "logistic_regression_robot_W_1s_coefficients.csv"
-write_predictions_csv = "logistic_regression_robot_W_1s_predictions.csv"
+write_model_file = "logistic_regression_held_out_fine_gross_shape_robot_W_1s.joblib"
+write_coefficients_csv = "logistic_regression_held_out_fine_gross_shape_robot_W_1s_coefficients.csv"
+write_predictions_csv = "logistic_regression_held_out_fine_gross_shape_robot_W_1s_predictions.csv"
 
 # TODO the EXACT features to fit on -- nothing else is used, nothing is
 # ranked/selected automatically.
@@ -51,6 +52,17 @@ feature_columns = [
 ]
 
 target_column = "trial_class_label"  # TODO label column, string values
+
+# TODO metadata columns carried into the predictions CSV (not fit on) --
+# lets a downstream plot order/group predictions by trial.
+identifying_columns = [
+    "subject", "bandwidth", "direction", "window_index", "window_center_s",
+]
+
+# TODO window position columns [m] (not fit on) -- each window's mean
+# TCP position, carried into the predictions CSV so a downstream plot
+# can place each window's probability on the shape.
+position_columns = ["robot_mean_position_x", "robot_mean_position_y"]
 
 random_seed = 42
 max_iterations = 1000  # TODO sklearn LogisticRegression's max_iter
@@ -77,6 +89,14 @@ def main() -> None:
     missing = [f for f in feature_columns if f not in train_table.columns]
     if missing:
         raise ValueError(f"feature_columns not found in {read_train_csv}: {missing}")
+    missing_identifying = [c for c in identifying_columns if c not in test_table.columns]
+    if missing_identifying:
+        raise ValueError(
+            f"identifying_columns not found in {read_test_csv}: {missing_identifying}")
+    missing_position = [c for c in position_columns if c not in test_table.columns]
+    if missing_position:
+        raise ValueError(
+            f"position_columns not found in {read_test_csv}: {missing_position}")
 
     # Drop rows with any NaN in the chosen features/label -- logistic
     # regression cannot fit through missing values.
@@ -127,7 +147,9 @@ def main() -> None:
     coefficients_table.to_csv(coefficients_path, index=False)
 
     # ---- Save test-set predictions, for manual verification ----
-    predictions_table = test_clean[feature_columns + [target_column]].copy()
+    predictions_table = test_clean[
+        feature_columns + [target_column] + identifying_columns
+        + position_columns].copy()
     predictions_table["predicted_label"] = y_predicted
     for class_index, class_name in enumerate(model.classes_):
         predictions_table[f"probability_{class_name}"] = \
