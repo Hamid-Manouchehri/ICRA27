@@ -91,12 +91,12 @@ script_directory = fileparts(mfilename('fullpath'));
 % TODO controller log written by scripts/ur5e_chen_var_adm_2d.py.
 robot_csv_file = fullfile( ...
     script_directory, '..', 'data', 'raw_data', ...
-    'ur5e_chen_var_adm_2d_narrow_pear_shape_counter_clockwise_s10.csv');
+    'ur5e_chen_vac_2d_wide_pear_shape.csv');
 
 % TODO matching gaze log from the same trial (same time_s origin).
 gaze_csv_file = fullfile( ...
     script_directory, '..', 'data', 'raw_data', ...
-    'tobii_chen_var_adm_2d_narrow_pear_shape_counter_clockwise_s10.csv');
+    'tobii_chen_vac_2d_wide_pear_shape.csv');
 
 % TODO true overlays gaze on the TCP path and draws the gaze figure.
 % Set false to skip every gaze panel, e.g. for a trial recorded without
@@ -109,7 +109,7 @@ plot_gaze_overlay = true;
 % controller diagnostics need no calibration.
 calibration_json_file = fullfile( ...
     script_directory, '..', 'data', 'calibrations', ...
-    'tobii_coppelia_reference_calibration_narrow_pear_shape_counter_clockwise_s17.json');
+    'tobii_coppelia_reference_calibration_wide_pear_shape_clockwise_s14.json');
 
 % TODO these must match the User Settings of the Python controller that
 % produced the CSV. They are only drawn as reference lines; the script
@@ -138,7 +138,7 @@ beta_max = 2.0 / 3.0;
 % {wide,narrow}_pear_shape.obj, {wide,narrow}_teeth_ellipse_shape.obj
 shape_obj_file = fullfile( ...
     script_directory, '..', 'data', 'shapes', ...
-    'narrow_pear_shape.obj');
+    'wide_pear_shape.obj');
 
 % TODO translation from the mesh CAD frame to the CoppeliaSim frame [m].
 % VERIFY THIS before trusting the accuracy number: it sets where the
@@ -149,7 +149,7 @@ shape_obj_file = fullfile( ...
 % path, and the summary prints the offset that would minimize the error,
 % so a bad registration is visible rather than silent.
 % current shapes offsets:
-% shape_offset_xy_m = [-0.015, -0.650];  % narrow/wide_teeth_ellipse_shape
+% shape_offset_xy_m = [-0.015, -0.650];  % narrow/wide_ellipse_shape
 shape_offset_xy_m = [0.025, -0.660];  % narrow/wide_pear_shape
 % shape_offset_xy_m = [-0.0, -0.650];  % narrow/wide_fine_gross_shape
 
@@ -1438,17 +1438,20 @@ function [outer_xy_m, inner_xy_m, centre_xy_m] = read_shape_band_obj( ...
 %   outer_xy_m, inner_xy_m - resampled outer and inner edge loops, each
 %       N-by-2 in the mesh CAD frame [m].
 %   centre_xy_m - the reference path, midway between the two edges.
-%       Empty when the mesh does not resolve into exactly two loops.
+%       Empty when fewer than two boundary loops are found.
 %
 % Method:
 %   The band is extruded in z, so its bottom cap carries the planar
 %   outline. Cap triangles are collected, and the outline is the set of
 %   edges belonging to exactly one triangle: interior triangulation
 %   diagonals are shared by two and drop out. Those boundary edges chain
-%   into closed loops; the loop enclosing the larger area is the outer
-%   edge. The centre line takes, for each outer sample, the nearest
-%   inner sample and averages the two, which is what an offset band
-%   gives.
+%   into closed loops; the TWO LARGEST-AREA loops are taken as outer/
+%   inner (a band that pinches to a thin neck, e.g. the pear shape's
+%   tip, can detach a small extra loop there -- any loop smaller than
+%   the top two is discarded with a warning rather than failing the
+%   whole shape). The centre line takes, for each outer sample, the
+%   nearest inner sample and averages the two, which is what an offset
+%   band gives.
 
     outer_xy_m = [];
     inner_xy_m = [];
@@ -1547,20 +1550,29 @@ function [outer_xy_m, inner_xy_m, centre_xy_m] = read_shape_band_obj( ...
         end
     end
 
-    if numel(loops) ~= 2
+    if numel(loops) < 2
         return;
     end
 
-    loop_areas = zeros(1, 2);
-    for loop_idx = 1:2
+    loop_areas_m2 = zeros(1, numel(loops));
+    for loop_idx = 1:numel(loops)
         loop_xy = loops{loop_idx};
-        loop_areas(loop_idx) = abs(0.5 * sum( ...
+        loop_areas_m2(loop_idx) = abs(0.5 * sum( ...
             loop_xy(:, 1) .* circshift(loop_xy(:, 2), -1) - ...
             circshift(loop_xy(:, 1), -1) .* loop_xy(:, 2)));
     end
 
-    [~, outer_index] = max(loop_areas);
-    inner_index = 3 - outer_index;
+    [sorted_areas_m2, sorted_order] = sort(loop_areas_m2, 'descend');
+    outer_index = sorted_order(1);
+    inner_index = sorted_order(2);
+
+    if numel(loops) > 2
+        warning(['%s: found %d boundary loop(s) beyond the outer/inner ' ...
+            'pair (discarded area(s) %s mm^2, likely a meshing artifact ' ...
+            'at a thin pinch point in the band) -- using only the two ' ...
+            'largest loops by area.'], obj_file, numel(loops) - 2, ...
+            mat2str(round(1e6 * sorted_areas_m2(3:end), 1)));
+    end
 
     outer_xy_m = resample_closed_loop( ...
         loops{outer_index}, resample_spacing_m);

@@ -55,13 +55,13 @@ calibration_json_path = (
     Path(__file__).resolve().parent.parent
     / "data"
     / "calibrations"
-    # / "tobii_coppelia_reference_calibration_narrow_fine_gross_shape_counter_clockwise_s20.json"
-    # / "tobii_coppelia_reference_calibration_wide_fine_gross_shape_counter_clockwise_s20.json"
-    # / "tobii_coppelia_reference_calibration_narrow_ellipse_shape_counter_clockwise_s20.json"
-    # / "tobii_coppelia_reference_calibration_wide_ellipse_shape_counter_clockwise_s20.json"
-    # / "tobii_coppelia_reference_calibration_narrow_pear_shape_counter_clockwise_s20.json"
-    # / "tobii_coppelia_reference_calibration_wide_pear_shape_counter_clockwise_s20.json"
-    / "tobii_coppelia_reference_calibration_test.json"
+    # / "tobii_coppelia_reference_calibration_narrow_fine_gross_shape_counter_clockwise_shruti.json"
+    # / "tobii_coppelia_reference_calibration_wide_fine_gross_shape_counter_clockwise_shruti.json"
+    # / "tobii_coppelia_reference_calibration_narrow_ellipse_shape_counter_clockwise_shruti.json"
+    # / "tobii_coppelia_reference_calibration_wide_ellipse_shape_counter_clockwise_shruti.json"
+    # / "tobii_coppelia_reference_calibration_narrow_pear_shape_counter_clockwise_shruti.json"
+    / "tobii_coppelia_reference_calibration_wide_pear_shape_counter_clockwise_shruti.json"
+    # / "tobii_coppelia_reference_calibration_test.json"
 )
 
 start_joint_q_deg = [  # TODO known joint angles [deg], within joint limits

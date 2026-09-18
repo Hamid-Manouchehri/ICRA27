@@ -205,7 +205,12 @@ write_data_csv_path = (
     Path(__file__).resolve().parent.parent /
     "data" /
     "raw_data" /
-    "ur5e_chen_var_adm_2d_wide_fine_gross_shape_test.csv"
+    # "ur5e_chen_vac_2d_narrow_ellipse_shape_s14.csv"  # 4 
+    # "ur5e_chen_vac_2d_narrow_fine_gross_shape_s14.csv"  # 5
+    #  "ur5e_chen_vac_2d_narrow_pear_shape_s14.csv"  # 2
+    # "ur5e_chen_vac_2d_wide_ellipse_shape_s14.csv"  # 1   
+    # "ur5e_chen_vac_2d_wide_pear_shape_s14.csv"  # 6
+    # "ur5e_chen_vac_2d_wide_fine_gross_shape_s14.csv"  # 3
 )
 
 # TODO Tobii output CSV path [file path]; one row per Tobii callback.
@@ -215,7 +220,12 @@ tobii_data_csv_path = (
     Path(__file__).resolve().parent.parent /
     "data" /
     "raw_data" /
-    "tobii_chen_var_adm_2d_wide_fine_gross_shape_test.csv"
+    # "tobii_chen_vac_2d_narrow_ellipse_shape_s14.csv"  # 4  
+    # "tobii_chen_vac_2d_narrow_fine_gross_shape_s14.csv"  # 5
+    # "tobii_chen_vac_2d_narrow_pear_shape_s14.csv"  # 2
+    # "tobii_chen_vac_2d_wide_ellipse_shape_s14.csv"  # 1
+    # "tobii_chen_vac_2d_wide_pear_shape_s14.csv"  # 6
+    # "tobii_chen_vac_2d_wide_fine_gross_shape_s14.csv"  # 3
 )
 
 # --- Admittance model, paper (2) and (7) ---
@@ -375,7 +385,7 @@ control_frequency_hz = 500.0  # TODO UR5e native control rate [Hz]
 speedl_acceleration_m_s2 = 0.5  # TODO speedL acceleration [m/s^2]
 speed_stop_deceleration_m_s2 = 2.0  # TODO stop deceleration [m/s^2]
 
-max_runtime_s = 120.0  # TODO automatic stop time [s], must be positive
+max_runtime_s = 60.0  # TODO automatic stop time [s], must be positive
 subject_preparation_time_s = 1.0  # TODO delay before recording [s], >= 0
 
 move_to_start_configuration = True  # TODO bool; False skips startup move

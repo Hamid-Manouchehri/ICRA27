@@ -272,7 +272,12 @@ write_data_csv_path = (
     Path(__file__).resolve().parent.parent /
     "data" /
     "raw_data" /
-    "ur5e_gaze_assisted_chen_vac_2d_wide_fine_gross_shape_test.csv"
+    # "ur5e_gaze_assisted_chen_vac_2d_held_out_pear_and_s14_on_narrow_pear_shape.csv"  # 2
+    # "ur5e_gaze_assisted_chen_vac_2d_held_out_fine_gross_and_s14_on_narrow_fine_gross_shape.csv"  # 5
+    # "ur5e_gaze_assisted_chen_vac_2d_held_out_ellipse_and_s14_on_narrow_ellipse_shape.csv"  # 4 
+    # "ur5e_gaze_assisted_chen_vac_2d_held_out_fine_gross_and_s14_on_wide_fine_gross_shape.csv"  # 3
+    # "ur5e_gaze_assisted_chen_vac_2d_held_out_pear_and_s14_on_wide_pear_shape.csv"  # 6
+    "ur5e_gaze_assisted_chen_vac_2d_held_out_ellipse_and_s14_on_wide_ellipse_shape.csv"  # 1
 )
 
 # TODO Tobii output CSV path [file path]; one row per Tobii callback.
@@ -282,7 +287,12 @@ tobii_data_csv_path = (
     Path(__file__).resolve().parent.parent /
     "data" /
     "raw_data" /
-    "tobii_gaze_assisted_chen_vac_2d_wide_fine_gross_shape_test.csv"
+    # "tobii_gaze_assisted_chen_vac_2d_held_out_pear_and_s14_on_narrow_pear_shape.csv"  # 2
+    # "tobii_gaze_assisted_chen_vac_2d_held_out_fine_gross_and_s14_on_narrow_fine_gross_shape.csv"  # 5
+    # "tobii_gaze_assisted_chen_vac_2d_held_out_ellipse_and_s14_on_narrow_ellipse_shape.csv"  # 4
+    # "tobii_gaze_assisted_chen_vac_2d_held_out_fine_gross_and_s14_on_wide_fine_gross_shape.csv"  # 3
+    # "tobii_gaze_assisted_chen_vac_2d_held_out_pear_and_s14_on_wide_pear_shape.csv"  # 6
+    "tobii_gaze_assisted_chen_vac_2d_held_out_ellipse_and_s14_on_wide_ellipse_shape.csv"  # 1 
 )
 
 # --- Classifier-gated damping bounds (the addition over Chen) ---
@@ -300,7 +310,9 @@ read_model_joblib_path = (
     Path(__file__).resolve().parent.parent /
     "data" /
     "models" /
-    "logistic_regression_held_out_fine_gross_shape_robot_1win_ahead_W_1s.joblib"
+    "logistic_regression_held_out_ellipse_shape_and_s14_1win_ahead_W_1s.joblib"
+    # "logistic_regression_held_out_pear_shape_and_s14_1win_ahead_W_1s.joblib"
+    # "logistic_regression_held_out_fine_gross_shape_and_s14_1win_ahead_W_1s.joblib"
 )
 
 # TODO THIS session's Tobii -> CoppeliaSim/robot-base mapping, from
@@ -311,14 +323,19 @@ read_calibration_json_path = (
     Path(__file__).resolve().parent.parent /
     "data" /
     "calibrations" /
-    "tobii_coppelia_reference_calibration_wide_fine_gross_shape_clockwise_s14.json"
+    "tobii_coppelia_reference_calibration_wide_ellipse_shape_counter_clockwise_s14.json"
+    # "tobii_coppelia_reference_calibration_narrow_ellipse_shape_counter_clockwise_s14.json"
+    # "tobii_coppelia_reference_calibration_wide_pear_shape_counter_clockwise_s14.json"
+    # "tobii_coppelia_reference_calibration_narrow_pear_shape_counter_clockwise_s14.json"
+    # "tobii_coppelia_reference_calibration_wide_fine_gross_shape_counter_clockwise_s14.json"
+    # "tobii_coppelia_reference_calibration_narrow_fine_gross_shape_counter_clockwise_s14.json"
 )
 
 # TODO damping bounds [N s/m] per predicted class, each low < high.
 # Fine is precise/slow so it belongs HIGHER than Gross -- paper (7)
 # maps a small force onto the upper bound. bd_min/bd_max interpolate
 # between these two pairs by P(Fine).
-fine_damping_bounds_n_s_m = [80.0, 250.0]
+fine_damping_bounds_n_s_m = [80.0, 200.0]
 gross_damping_bounds_n_s_m = [10.0, 100.0]
 
 # TODO sham arm: None uses the model; a float in [0, 1] freezes P(Fine)
@@ -541,7 +558,7 @@ control_frequency_hz = 500.0  # TODO UR5e native control rate [Hz]
 speedl_acceleration_m_s2 = 0.5  # TODO speedL acceleration [m/s^2]
 speed_stop_deceleration_m_s2 = 2.0  # TODO stop deceleration [m/s^2]
 
-max_runtime_s = 120.0  # TODO automatic stop time [s], must be positive
+max_runtime_s = 60.0  # TODO automatic stop time [s], must be positive
 subject_preparation_time_s = 1.0  # TODO delay before recording [s], >= 0
 
 move_to_start_configuration = True  # TODO bool; False skips startup move

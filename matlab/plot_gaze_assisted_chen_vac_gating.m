@@ -38,14 +38,14 @@ script_directory = fileparts(mfilename('fullpath'));
 %% User Settings
 % TODO controller log written by scripts/ur5e_gaze_assisted_chen_vac_2d.py.
 robot_csv_file = fullfile( ...
-    script_directory, '..', 'data', 'raw_data', ...
-    'ur5e_gaze_assisted_chen_vac_2d_test.csv');
+    script_directory, '..', 'data', 'raw_data', 'test_subjects', ...
+    'ur5e_gaze_assisted_chen_vac_2d_held_out_pear_and_s19_on_wide_pear_shape.csv');
 
 % TODO damping bounds [N s/m] per class, must match the Python
 % controller's fine_damping_bounds_n_s_m / gross_damping_bounds_n_s_m --
 % drawn as reference lines showing the two pairs bd_min/bd_max
 % interpolate between.
-fine_damping_bounds_n_s_m = [80.0, 250.0];
+fine_damping_bounds_n_s_m = [80.0, 200.0];
 gross_damping_bounds_n_s_m = [10.0, 100.0];
 
 % TODO must match the Python controller's max_probability_age_s -- drawn
@@ -189,6 +189,7 @@ legend('Location', 'best', 'FontSize', 7);
 
 % ---- Tile 4: probability age ----
 age_axes = nexttile;
+%{
 if have_probability
     plot(time_s, probability_age_s, '-', 'LineWidth', 1.0);
     hold on;
@@ -204,8 +205,16 @@ xlabel('Time [s]');
 title('P(Fine) age (time since the last successful classifier update)');
 
 linkaxes([force_axes, probability_axes, bounds_axes, age_axes], 'x');
-xlim(force_axes, [time_s(1), time_s(end)]);
+%}
+plot(robot_table.x_m,robot_table.bd_applied_Ns_m,'.k')
 
+%{
+plot(time_s,robot_table.x_m)
+hold on
+plot(time_s,0.05+0*robot_table.x_m,'k')
+
+xlim(force_axes, [time_s(1), time_s(end)]);
+%}
 %% ================================================================
 % Summary
 % =================================================================
