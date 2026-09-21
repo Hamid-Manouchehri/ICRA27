@@ -34,13 +34,13 @@ MODEL_DIRECTORY = PROJECT_ROOT / "data" / "models"
 
 # -------------------- Start User Settings --------------------
 # TODO explicit input filenames (data/processed_data/).
-read_train_csv = "features_all_train_held_out_ellipse_shape_and_s14_1win_ahead_W_1s.csv"
-read_test_csv = "features_all_test_held_out_ellipse_shape_and_s14_1win_ahead_W_1s.csv"
+read_train_csv = "features_all_train_held_out_fine_gross_shape_and_s17_1win_ahead_W_1s.csv"
+read_test_csv = "features_all_test_held_out_fine_gross_shape_and_s17_1win_ahead_W_1s.csv"
 
 # TODO explicit output filenames (all written to data/processed_data/).
-write_model_file = "logistic_regression_held_out_ellipse_shape_and_s14_1win_ahead_W_1s.joblib"
-write_coefficients_csv = "logistic_regression_held_out_ellipse_shape_and_s14_1win_ahead_W_1s_coefficients.csv"
-write_predictions_csv = "logistic_regression_held_out_ellipse_shape_and_s14_1win_ahead_W_1s_predictions.csv"
+write_model_file = "logistic_regression_held_out_fine_gross_shape_and_s17_1win_ahead_W_1s.joblib"
+write_coefficients_csv = "logistic_regression_held_out_fine_gross_shape_and_s17_1win_ahead_W_1s_coefficients.csv"
+write_predictions_csv = "logistic_regression_held_out_fine_gross_shape_and_s17_1win_ahead_W_1s_predictions.csv"
 
 # TODO the EXACT features to fit on -- nothing else is used, nothing is
 # ranked/selected automatically.
@@ -56,7 +56,8 @@ target_column = "trial_class_label"  # TODO label column, string values
 # TODO metadata columns carried into the predictions CSV (not fit on) --
 # lets a downstream plot order/group predictions by trial.
 identifying_columns = [
-    "subject", "bandwidth", "direction", "window_index", "window_center_s",
+    "subject", "bandwidth", "direction", "shape", "window_index",
+    "window_center_s",
 ]
 
 # TODO window position columns [m] (not fit on) -- each window's mean

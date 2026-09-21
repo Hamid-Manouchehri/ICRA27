@@ -1,0 +1,16 @@
+function [unit_direction, eye_valid] = calculate_eye_direction( ...
+        gaze_origin_ucs_mm, gaze_point_ucs_mm, ...
+        origin_validity, point_validity)
+%CALCULATE_EYE_DIRECTION Build one eye's unit direction in Tobii UCS.
+% Copied from plot_raw_data_chen_vac_2d.m.
+
+    direction = gaze_point_ucs_mm - gaze_origin_ucs_mm;
+    direction_norm = sqrt(sum(direction .^ 2, 2));
+    eye_valid = origin_validity & point_validity & ...
+        finite_rows(gaze_origin_ucs_mm) & finite_rows(gaze_point_ucs_mm) & ...
+        isfinite(direction_norm) & direction_norm > 0;
+
+    unit_direction = NaN(size(direction));
+    unit_direction(eye_valid, :) = direction(eye_valid, :) ./ ...
+        direction_norm(eye_valid);
+end

@@ -1,0 +1,13 @@
+function print_registration_check(arm_name, metrics)
+%PRINT_REGISTRATION_CHECK How much a per-trial best-fit shift would have
+% reduced tracking error -- large values mean shape_offset_xy_m is
+% probably wrong for that trial, not that the controller tracked poorly.
+
+for trial_idx = 1:numel(metrics.reference_shift_mm)
+    fprintf(['  %-6s trial %d: best-fit shift would reduce error by ' ...
+        '%.3f mm%s\n'], arm_name, trial_idx, ...
+        metrics.reference_shift_mm(trial_idx), ...
+        iif(metrics.reference_shift_mm(trial_idx) > 1.0, ...
+        '  <-- check shape_offset_xy_m', ''));
+end
+end

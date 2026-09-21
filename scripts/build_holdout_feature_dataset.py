@@ -43,8 +43,8 @@ read_test_csv = "features_all_test_W_1s.csv"
 # Rename these yourself when held_out_criteria changes below, so a
 # new holdout run doesn't silently overwrite a previous one (no
 # auto-generated tag in the filename, per this project's convention).
-write_train_csv = "features_all_train_held_out_ellipse_shape_and_s14_1win_ahead_W_1s.csv"
-write_test_csv = "features_all_test_held_out_ellipse_shape_and_s14_1win_ahead_W_1s.csv"
+write_train_csv = "features_all_train_held_out_ellipse_shape_and_s11_1win_ahead_W_1s.csv"
+write_test_csv = "features_all_test_held_out_ellipse_shape_and_s11_1win_ahead_W_1s.csv"
 
 # TODO one or more {column: values} criteria to hold out -- a window is
 # TEST if it matches ANY criterion (union across columns AND across
@@ -64,7 +64,7 @@ write_test_csv = "features_all_test_held_out_ellipse_shape_and_s14_1win_ahead_W_
 #   "bandwidth" ->  "narrow", "wide"
 #   "direction" ->  "clockwise", "counter_clockwise"
 held_out_criteria = {
-    "subject": [14],
+    "subject": [11],
     "shape": ["ellipse"],
 }
 

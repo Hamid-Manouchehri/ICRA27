@@ -1,0 +1,109 @@
+function [fixation_xy_m, raw_gaze_xy_m, fixation_time_s, ...
+        raw_gaze_time_s] = detect_fixations_coppelia_xy( ...
+        gaze_table, tobii_reference_xy_mm, coppelia_reference_xy_m, ...
+        screen_motion_per_robot_motion, tobii_to_coppelia_axis_sign, ...
+        velocity_threshold_deg_s, minimum_fixation_duration_s, ...
+        plot_only_on_display_gaze)
+%DETECT_FIXATIONS_COPPELIA_XY I-VT fixation centres in CoppeliaSim [m].
+% Copied from plot_raw_data_chen_vac_2d.m (itself copied from
+% compute_plot_similarity_fixation_direction_force_vel.m).
+
+    left_gaze_ucs_mm = parse_vector_column( ...
+        gaze_table.left_gaze_point_in_user_coordinate_system, 3);
+    right_gaze_ucs_mm = parse_vector_column( ...
+        gaze_table.right_gaze_point_in_user_coordinate_system, 3);
+    left_gaze_origin_ucs_mm = parse_vector_column( ...
+        gaze_table.left_gaze_origin_in_user_coordinate_system, 3);
+    right_gaze_origin_ucs_mm = parse_vector_column( ...
+        gaze_table.right_gaze_origin_in_user_coordinate_system, 3);
+    left_display_gaze = parse_vector_column( ...
+        gaze_table.left_gaze_point_on_display_area, 2);
+    right_display_gaze = parse_vector_column( ...
+        gaze_table.right_gaze_point_on_display_area, 2);
+
+    left_point_valid = get_numeric_column( ...
+        gaze_table.left_gaze_point_validity) == 1;
+    right_point_valid = get_numeric_column( ...
+        gaze_table.right_gaze_point_validity) == 1;
+    left_origin_valid = get_numeric_column( ...
+        gaze_table.left_gaze_origin_validity) == 1;
+    right_origin_valid = get_numeric_column( ...
+        gaze_table.right_gaze_origin_validity) == 1;
+
+    gaze_time_s = get_numeric_column(gaze_table.time_s);
+
+    left_point_valid = left_point_valid & finite_rows(left_gaze_ucs_mm);
+    right_point_valid = right_point_valid & finite_rows(right_gaze_ucs_mm);
+
+    if plot_only_on_display_gaze
+        left_point_valid = left_point_valid & ...
+            point_is_on_display(left_display_gaze);
+        right_point_valid = right_point_valid & ...
+            point_is_on_display(right_display_gaze);
+    end
+
+    [left_gaze_direction, left_eye_valid] = calculate_eye_direction( ...
+        left_gaze_origin_ucs_mm, left_gaze_ucs_mm, ...
+        left_origin_valid, left_point_valid);
+    [right_gaze_direction, right_eye_valid] = calculate_eye_direction( ...
+        right_gaze_origin_ucs_mm, right_gaze_ucs_mm, ...
+        right_origin_valid, right_point_valid);
+
+    [combined_gaze_ucs_mm, combined_point_valid] = combine_valid_eye_points( ...
+        left_gaze_ucs_mm, right_gaze_ucs_mm, left_eye_valid, right_eye_valid);
+    [combined_gaze_direction, combined_direction_valid] = ...
+        combine_valid_eye_directions( ...
+        left_gaze_direction, right_gaze_direction, ...
+        left_eye_valid, right_eye_valid);
+    combined_gaze_valid = combined_point_valid & combined_direction_valid;
+    combined_gaze_ucs_mm(~combined_gaze_valid, :) = NaN;
+
+    angular_velocity_deg_s = calculate_angular_velocity( ...
+        combined_gaze_direction, gaze_time_s, combined_gaze_valid);
+    fixation_candidate = combined_gaze_valid & ...
+        isfinite(angular_velocity_deg_s) & ...
+        angular_velocity_deg_s <= velocity_threshold_deg_s;
+
+    candidate_changes = diff(double([false; fixation_candidate; false]));
+    candidate_start_indices = find(candidate_changes == 1);
+    candidate_end_indices = find(candidate_changes == -1) - 1;
+
+    fixation_mean_ucs_x_mm = zeros(0, 1);
+    fixation_mean_ucs_y_mm = zeros(0, 1);
+    fixation_time_s = zeros(0, 1);
+
+    for candidate_idx = 1:numel(candidate_start_indices)
+        start_idx = candidate_start_indices(candidate_idx);
+        end_idx = candidate_end_indices(candidate_idx);
+        candidate_duration_s = gaze_time_s(end_idx) - gaze_time_s(start_idx);
+
+        if candidate_duration_s < minimum_fixation_duration_s
+            continue;
+        end
+
+        fixation_rows = start_idx:end_idx;
+        mean_ucs_mm = mean(combined_gaze_ucs_mm(fixation_rows, :), 1);
+        fixation_mean_ucs_x_mm(end + 1, 1) = mean_ucs_mm(1); %#ok<AGROW>
+        fixation_mean_ucs_y_mm(end + 1, 1) = mean_ucs_mm(2); %#ok<AGROW>
+
+        fixation_time_s(end + 1, 1) = 0.5 * ( ...
+            gaze_time_s(start_idx) + gaze_time_s(end_idx)); %#ok<AGROW>
+    end
+
+    coppeliasim_m_per_tobii_mm = 1e-3 / screen_motion_per_robot_motion;
+    fixation_ucs_xy_mm = [fixation_mean_ucs_x_mm, fixation_mean_ucs_y_mm];
+    fixation_displacement_ucs_mm = fixation_ucs_xy_mm - tobii_reference_xy_mm;
+    fixation_displacement_coppelia_m = fixation_displacement_ucs_mm .* ...
+        tobii_to_coppelia_axis_sign .* coppeliasim_m_per_tobii_mm;
+    fixation_xy_m = coppelia_reference_xy_m + fixation_displacement_coppelia_m;
+
+    both_eyes_point_valid = left_point_valid & right_point_valid;
+    raw_gaze_ucs_xy_mm = 0.5 * ( ...
+        left_gaze_ucs_mm(both_eyes_point_valid, 1:2) + ...
+        right_gaze_ucs_mm(both_eyes_point_valid, 1:2));
+    raw_gaze_displacement_ucs_mm = raw_gaze_ucs_xy_mm - tobii_reference_xy_mm;
+    raw_gaze_displacement_coppelia_m = raw_gaze_displacement_ucs_mm .* ...
+        tobii_to_coppelia_axis_sign .* coppeliasim_m_per_tobii_mm;
+    raw_gaze_xy_m = coppelia_reference_xy_m + raw_gaze_displacement_coppelia_m;
+    raw_gaze_time_s = gaze_time_s(both_eyes_point_valid);
+end

@@ -88,7 +88,7 @@ PROCESSED_DATA_DIRECTORY = DATA_DIRECTORY / "processed_data"
 # TODO the ur5e CSV filename to label, exactly as it appears in
 # data/raw_data/ -- the matching tobii_* CSV is derived automatically
 # (same trial token, standard naming).
-robot_csv_filename = "ur5e_chen_var_adm_2d_narrow_ellipse_shape_clockwise_s20.csv"  # 1
+# robot_csv_filename = "ur5e_chen_var_adm_2d_narrow_ellipse_shape_clockwise_s20.csv"  # 1
 # robot_csv_filename = "ur5e_chen_var_adm_2d_wide_ellipse_shape_clockwise_s20.csv"  # 2
 # robot_csv_filename = "ur5e_chen_var_adm_2d_narrow_ellipse_shape_counter_clockwise_s20.csv"  # 3
 # robot_csv_filename = "ur5e_chen_var_adm_2d_wide_ellipse_shape_counter_clockwise_s20.csv"  # 4 
@@ -101,7 +101,8 @@ robot_csv_filename = "ur5e_chen_var_adm_2d_narrow_ellipse_shape_clockwise_s20.cs
 # robot_csv_filename = "ur5e_chen_var_adm_2d_narrow_pear_shape_counter_clockwise_s20.csv"  # 11
 # robot_csv_filename = "ur5e_chen_var_adm_2d_wide_pear_shape_counter_clockwise_s20.csv"  # 12
 
-overwrite_existing = True  # TODO refuse to run if the output CSV exists
+
+overwrite_existing = False  # TODO refuse to run if the output CSV exists
 
 fine_key = "d"
 gross_key = "g"

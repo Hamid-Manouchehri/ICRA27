@@ -1,8 +1,10 @@
 %% Classifier-gating diagnostics for one ur5e_gaze_assisted_chen_vac_2d.py trial.
 %
 % Inputs:
-%   data/raw_data/<robot_csv_file>   controller log, selected in User
-%     Settings. Must have the classifier-gating columns (present whether
+%   data/raw_data/<read_robot_csv_file>   controller log. DERIVED from
+%     the "Trial identity" block in User Settings (bandwidth_label,
+%     shape_name, gated_subject_id) -- to switch trials, edit that block
+%     only. Must have the classifier-gating columns (present whether
 %     enable_classifier_gating was True or False for that run).
 %
 % Outputs:
@@ -17,7 +19,11 @@
 %     P(Fine)/compute-time/age statistics, how often the age fallback
 %     fired, whether bd_applied ever left its own tick's [bd_min, bd_max]
 %     band, and mean/std of every logged classifier feature.
-%   No file is written; this script only reads the CSV above.
+%   Both figures are also saved TOGETHER in one native MATLAB .fig file
+%   under data/images/figures/plot_gaze_assisted_chen_vac_gating/ (see
+%   write_combined_fig in User Settings), so
+%   plot_saved_gaze_assisted_chen_vac_gating.m can reopen both at once
+%   without rereading the CSV.
 %
 % Assumptions:
 %   The CSV was written by scripts/ur5e_gaze_assisted_chen_vac_2d.py, so
@@ -36,10 +42,61 @@ clc;
 script_directory = fileparts(mfilename('fullpath'));
 
 %% User Settings
-% TODO controller log written by scripts/ur5e_gaze_assisted_chen_vac_2d.py.
-robot_csv_file = fullfile( ...
-    script_directory, '..', 'data', 'raw_data', 'test_subjects', ...
-    'ur5e_gaze_assisted_chen_vac_2d_held_out_pear_and_s19_on_wide_pear_shape.csv');
+% TODO explicit directory where this script's figures are saved, one
+% subfolder per script for organization (see AI_GUIDELINES.md).
+write_image_directory = fullfile(script_directory, '..', 'data', ...
+    'images', 'figures', 'plot_gaze_assisted_chen_vac_gating');
+
+% TODO -------------------- Trial identity --------------------
+% read_robot_csv_file and the output filename are DERIVED from these
+% few tags -- switch trials by editing only this block. Verified
+% against every file actually present under data/raw_data/
+% test_subjects/ as of this writing.
+bandwidth_label = "narrow";      % TODO 'narrow' or 'wide'
+shape_name = "ellipse";           % TODO 'ellipse', 'pear', or 'fine_gross'
+% bandwidth_label = "wide";      % TODO 'narrow' or 'wide'
+% shape_name = "ellipse";           % TODO 'ellipse', 'pear', or 'fine_gross'
+
+% bandwidth_label = "narrow";      % TODO 'narrow' or 'wide'
+% shape_name = "pear";           % TODO 'ellipse', 'pear', or 'fine_gross'
+% bandwidth_label = "wide";      % TODO 'narrow' or 'wide'
+% shape_name = "pear";           % TODO 'ellipse', 'pear', or 'fine_gross'
+
+% bandwidth_label = "narrow";      % TODO 'narrow' or 'wide'
+% shape_name = "fine_gross";           % TODO 'ellipse', 'pear', or 'fine_gross'
+% bandwidth_label = "wide";      % TODO 'narrow' or 'wide'
+% shape_name = "fine_gross";           % TODO 'ellipse', 'pear', or 'fine_gross'
+
+gated_subject_id = "s15";      % TODO trial subject, e.g. "s21"
+
+% The CSV filename also encodes which shape+subject the model bundle
+% was held out of training on (leave-one-out generalization test).
+% That pair equals the trial's own shape+subject in every run so far,
+% so these default to the values above -- override only if a specific
+% run's held-out pair truly differs from its own trial identity.
+held_out_shape_name = shape_name;
+held_out_subject_id = gated_subject_id;
+
+shape_tag = bandwidth_label + "_" + shape_name;
+% TODO -------------------- End trial identity --------------------
+
+% Output filename (native MATLAB .fig; BOTH figures below are bundled
+% into this ONE file via savefig()'s multi-handle form, not one file
+% per figure -- see plot_saved_gaze_assisted_chen_vac_gating.m, which
+% reopens both at once with a single openfig()).
+write_combined_fig = fullfile(write_image_directory, sprintf( ...
+    'gaze_assisted_chen_vac_gating_%s_%s.fig', shape_tag, gated_subject_id));
+
+% Figure window title -- same as the saved file's own name (no
+% directory, no extension), so a reopened window is traceable to its
+% .fig file at a glance.
+[~, write_combined_fig_name, ~] = fileparts(write_combined_fig);
+
+% Controller log written by scripts/ur5e_gaze_assisted_chen_vac_2d.py.
+read_robot_csv_file = fullfile( ...
+    script_directory, '..', 'data', 'raw_data', 'test_subjects', sprintf( ...
+    'ur5e_gaze_assisted_chen_vac_2d_held_out_%s_and_%s_on_%s_shape.csv', ...
+    held_out_shape_name, held_out_subject_id, shape_tag));
 
 % TODO damping bounds [N s/m] per class, must match the Python
 % controller's fine_damping_bounds_n_s_m / gross_damping_bounds_n_s_m --
@@ -57,8 +114,16 @@ max_probability_age_s = 2.0;
 % outside it by a hair even when everything is working correctly.
 band_excursion_tolerance_n_s_m = 1e-2;
 
+fprintf('Input:  %s\n', read_robot_csv_file);
+fprintf('Output: %s\n\n', write_combined_fig);
+
+if ~isfolder(write_image_directory)
+    mkdir(write_image_directory);
+end
+figure_handles = gobjects(0);
+
 %% Load
-robot_table = readtable(robot_csv_file, ...
+robot_table = readtable(read_robot_csv_file, ...
     'Delimiter', ',', 'ReadVariableNames', true, ...
     'VariableNamingRule', 'preserve', 'TextType', 'string');
 
@@ -97,7 +162,8 @@ probability_colormap = [ ...
     linspace(gross_color(2), fine_color(2), 256)', ...
     linspace(gross_color(3), fine_color(3), 256)'];
 
-figure('Name', 'TCP path colored by P(Fine)', 'Color', 'w');
+figure_handles(end + 1) = figure('Name', ...
+    write_combined_fig_name, 'Color', 'w');
 hold on;
 
 if have_probability
@@ -128,7 +194,8 @@ legend('Location', 'best', 'FontSize', 8);
 % Figure 2: force, P(Fine), gated damping bounds, probability age
 % =================================================================
 
-figure('Name', 'Classifier gating over time', 'Color', 'w');
+figure_handles(end + 1) = figure('Name', ...
+    write_combined_fig_name, 'Color', 'w');
 tiledlayout(4, 1, 'TileSpacing', 'compact', 'Padding', 'compact');
 
 % ---- Tile 1: force (context) ----
@@ -215,6 +282,9 @@ plot(time_s,0.05+0*robot_table.x_m,'k')
 
 xlim(force_axes, [time_s(1), time_s(end)]);
 %}
+
+savefig(figure_handles, write_combined_fig);
+
 %% ================================================================
 % Summary
 % =================================================================
@@ -222,7 +292,7 @@ xlim(force_axes, [time_s(1), time_s(end)]);
 trial_duration_s = time_s(end) - time_s(1);
 
 fprintf('\n--- Classifier gating trial summary ---\n');
-fprintf('File: %s\n', robot_csv_file);
+fprintf('File: %s\n', read_robot_csv_file);
 fprintf('Duration: %.2f s over %d samples\n', ...
     trial_duration_s, height(robot_table));
 if gating_enabled

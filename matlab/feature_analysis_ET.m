@@ -31,7 +31,7 @@ buf = isnan(X);
 [a b] = find(buf==1);
 a = unique(a);
 
-X(a,:)=[];
+X(a,:)=[]
 Y(a,:)=[];
 B(a,:)=[];
 D(a,:)=[];

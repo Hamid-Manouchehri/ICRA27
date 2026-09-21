@@ -5,11 +5,15 @@
 % for a probabilistic binary classifier.
 %
 % Inputs:
-%   data/processed_data/<predictions_csv_file>   test-set true label,
+%   data/processed_data/<read_predictions_csv_file>   test-set true label,
 %     predicted label, per-class predicted probability (one row per
 %     window) -- written by train_logistic_regression.py.
-%   data/processed_data/<coefficients_csv_file>   one row per feature,
+%   data/processed_data/<read_coefficients_csv_file>   one row per feature,
 %     standardized coefficient -- written by train_logistic_regression.py.
+%   Both, plus the output filename, are DERIVED from the "Trial
+%   identity" block in User Settings (shape_name, held_out_subject_id,
+%   prediction_horizon_label, window_size_label) -- to switch trained
+%   models, edit that block only, not the paths themselves.
 %
 % Output:
 %   Figure 1 (2x3 tiles):
@@ -25,15 +29,23 @@
 %     5. Standardized coefficient bar chart (from the coefficients CSV).
 %     6. Predicted-probability histogram, split by true class.
 %   Figure 2: stem3 plot, predicted probability as the 3rd dimension
-%     over each window's (x, y) position on the held-out shape (see
-%     User Settings' position_x/y_column_name). All held-out trials
-%     are pooled onto one shape, not separated by trial/bandwidth.
-%     Requires predictions_csv_file to carry train_logistic_
-%     regression.py's position_columns -- an older predictions CSV
-%     without them will error here with a clear message.
+%     over each window's (x, y) position, FILTERED to shape_name (see
+%     User Settings) -- held_out_criteria can hold out more than one
+%     shape's worth of rows (e.g. a subject criterion pulls in that
+%     subject's other-shape trials too), so this filter is what keeps
+%     the plot to one physical shape. Falls back to plotting every row
+%     unfiltered, with a warning, if the predictions CSV predates the
+%     "shape" identifying column (rerun train_logistic_regression.py to
+%     add it). Requires read_predictions_csv_file to carry train_
+%     logistic_regression.py's position_columns -- an older predictions
+%     CSV without them will error here with a clear message.
 %   A numeric summary (accuracy, ROC-AUC, PR-AUC, per-bin calibration
 %   counts) printed to the command window.
-%   No file is written; this script only reads the two CSVs above.
+%   Both figures are also saved TOGETHER in one native MATLAB .fig file
+%   under data/images/figures/plot_logistic_regression_performance/
+%   (see write_combined_fig in User Settings), so plot_saved_logistic_
+%   regression_performance.m can reopen both at once without rereading
+%   either CSV.
 %
 % Positive-class convention:
 %   ROC/PR/calibration all treat positive_class_label (see User
@@ -59,15 +71,54 @@ close all;
 clc;
 
 script_directory = fileparts(mfilename('fullpath'));
+addpath(fullfile(script_directory, 'functions'));
 processed_data_directory = fullfile(script_directory, '..', 'data', 'processed_data');
 
 %% User Settings
-% TODO the two CSVs written by train_logistic_regression.py -- must
-% match its write_predictions_csv / write_coefficients_csv settings.
-read_predictions_csv_file = fullfile(processed_data_directory, ...
-    'logistic_regression_held_out_pear_shape_and_s13_1win_ahead_W_1s_predictions.csv');
-read_coefficients_csv_file = fullfile(processed_data_directory, ...
-    'logistic_regression_held_out_pear_shape_and_s13_1win_ahead_W_1s_coefficients.csv');
+% TODO explicit directory where this script's figures are saved, one
+% subfolder per script for organization (see AI_GUIDELINES.md).
+write_image_directory = fullfile(script_directory, '..', 'data', ...
+    'images', 'figures', 'plot_logistic_regression_performance');
+
+% TODO -------------------- Trial identity --------------------
+% Both input CSVs and the output filename are DERIVED from these few
+% tags -- switch trained models by editing only this block. Verified
+% against every file actually present under data/processed_data/ as of
+% this writing (the "_and_s<id>_" leave-one-subject-out CSVs; a few
+% differently-named bundles also exist there, e.g. "..._shape_robot_
+% W_1s_...", and are NOT reachable through this block).
+shape_name = "fine_gross";           % TODO 'ellipse', 'pear', or 'fine_gross'
+held_out_subject_id = "s13";         % TODO subject held out of training
+prediction_horizon_label = "1win_ahead";  % TODO must match train_
+                                           % logistic_regression.py's
+                                           % own filename tokens
+window_size_label = "W_1s";          % TODO must match train_logistic_
+                                      % regression.py's own filename token
+% TODO -------------------- End trial identity --------------------
+
+% Output filename (native MATLAB .fig; BOTH figures below are bundled
+% into this ONE file via savefig()'s multi-handle form, not one file
+% per figure -- see plot_saved_logistic_regression_performance.m, which
+% reopens both at once with a single openfig()).
+write_combined_fig = fullfile(write_image_directory, sprintf( ...
+    'logistic_regression_performance_%s_%s.fig', ...
+    shape_name, held_out_subject_id));
+
+% Figure window title -- same as the saved file's own name (no
+% directory, no extension), so a reopened window is traceable to its
+% .fig file at a glance.
+[~, write_combined_fig_name, ~] = fileparts(write_combined_fig);
+
+% The two CSVs written by train_logistic_regression.py -- must match
+% its write_predictions_csv / write_coefficients_csv settings.
+read_predictions_csv_file = fullfile(processed_data_directory, sprintf( ...
+    'logistic_regression_held_out_%s_shape_and_%s_%s_%s_predictions.csv', ...
+    shape_name, held_out_subject_id, prediction_horizon_label, ...
+    window_size_label));
+read_coefficients_csv_file = fullfile(processed_data_directory, sprintf( ...
+    'logistic_regression_held_out_%s_shape_and_%s_%s_%s_coefficients.csv', ...
+    shape_name, held_out_subject_id, prediction_horizon_label, ...
+    window_size_label));
 
 % TODO must match train_logistic_regression.py's target_column setting.
 target_column_name = 'trial_class_label';
@@ -98,7 +149,12 @@ position_y_column_name = "robot_mean_position_y";
 
 fprintf('Input:  %s\n', read_predictions_csv_file);
 fprintf('Input:  %s\n', read_coefficients_csv_file);
-fprintf('(No output file -- figures + command-window summary only.)\n\n');
+fprintf('Output: %s\n\n', write_combined_fig);
+
+if ~isfolder(write_image_directory)
+    mkdir(write_image_directory);
+end
+figure_handles = gobjects(0);
 
 %% Load
 predictions_table = readtable(read_predictions_csv_file, 'Delimiter', ',', ...
@@ -218,7 +274,8 @@ end
 % Figure 1: six diagnostic tiles
 % =================================================================
 
-figure('Name', 'Logistic regression performance', 'Color', 'w');
+figure_handles(end + 1) = figure('Name', ...
+    write_combined_fig_name, 'Color', 'w');
 tiledlayout(2, 3, 'TileSpacing', 'compact', 'Padding', 'compact');
 
 % --- Tile 1: confusion matrix ---
@@ -323,27 +380,54 @@ sgtitle(sprintf('Logistic regression test-set performance (n=%d)', sample_count)
 % each window's (x, y) position on the held-out shape.
 % =================================================================
 
-position_x = predictions_table.(position_x_column_name);
-position_y = predictions_table.(position_y_column_name);
-is_fine_true = predictions_table.(target_column_name) == positive_class_label;
+have_shape_column = ismember('shape', predictions_table.Properties.VariableNames);
+if have_shape_column
+    figure2_mask = predictions_table.shape == shape_name;
+    distinct_shapes = unique(predictions_table.shape);
+    fprintf(['\nFigure 2 filtered to shape="%s": %d of %d rows kept ' ...
+        '(held-out set spans %d shape(s): %s).\n'], shape_name, ...
+        sum(figure2_mask), sample_count, numel(distinct_shapes), ...
+        strjoin(cellstr(distinct_shapes), ', '));
+    if ~any(figure2_mask)
+        error(['No rows with shape="%s" in %s -- check shape_name.'], ...
+            shape_name, read_predictions_csv_file);
+    end
+else
+    figure2_mask = true(sample_count, 1);
+    warning(['predictions CSV has no "shape" column -- Figure 2 pools ' ...
+        'EVERY held-out row regardless of shape. Rerun train_logistic_' ...
+        'regression.py (identifying_columns now includes "shape") to fix.']);
+end
 
-figure('Name', 'Predicted probability over the held-out shape', 'Color', 'w');
+position_x = predictions_table.(position_x_column_name)(figure2_mask);
+position_y = predictions_table.(position_y_column_name)(figure2_mask);
+is_fine_true = predictions_table.(target_column_name)(figure2_mask) == ...
+    positive_class_label;
+figure2_score = score(figure2_mask);
+figure2_sample_count = sum(figure2_mask);
+
+figure_handles(end + 1) = figure('Name', ...
+    write_combined_fig_name, 'Color', 'w');
 hold on;
 stem3(position_x(is_fine_true), position_y(is_fine_true), ...
-    score(is_fine_true), 'Color', [0.85, 0.20, 0.20], 'Marker', '.', ...
-    'MarkerSize', 8, 'DisplayName', sprintf('True %s', positive_class_label));
+    figure2_score(is_fine_true), 'Color', [0.85, 0.20, 0.20], ...
+    'Marker', '.', 'MarkerSize', 8, ...
+    'DisplayName', sprintf('True %s', positive_class_label));
 stem3(position_x(~is_fine_true), position_y(~is_fine_true), ...
-    score(~is_fine_true), 'Color', [0.20, 0.50, 0.80], 'Marker', '.', ...
-    'MarkerSize', 8, 'DisplayName', sprintf('True %s', negative_class_label));
+    figure2_score(~is_fine_true), 'Color', [0.20, 0.50, 0.80], ...
+    'Marker', '.', 'MarkerSize', 8, ...
+    'DisplayName', sprintf('True %s', negative_class_label));
 grid on;
 view(-35, 25);
 zlim([0, 1]);
 xlabel('Robot mean position x [m]');
 ylabel('Robot mean position y [m]');
 zlabel(sprintf('Predicted probability of %s', positive_class_label));
-title(sprintf(['Predicted P(%s) over the held-out shape, per window ' ...
-    '(n=%d)'], positive_class_label, sample_count));
+title(sprintf(['Predicted P(%s) over shape="%s", per window (n=%d)'], ...
+    positive_class_label, shape_name, figure2_sample_count));
 legend('Location', 'best', 'FontSize', 7);
+
+savefig(figure_handles, write_combined_fig);
 
 %% ================================================================
 % Command-window summary
@@ -360,14 +444,3 @@ fprintf('\n');
 
 %% ================================================================
 %% Local functions
-%% ================================================================
-
-function text_value = format_or_dash(value)
-%FORMAT_OR_DASH "%.3f" for a real number, "  -  " for NaN (empty bin).
-
-    if isnan(value)
-        text_value = '  -  ';
-    else
-        text_value = sprintf('%.3f', value);
-    end
-end

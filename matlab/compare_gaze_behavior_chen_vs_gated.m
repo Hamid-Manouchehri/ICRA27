@@ -12,9 +12,11 @@
 %   Figure 1 (2x2 tiles), one grouped bar chart per metric, one group
 %     per (shape, bandwidth) cell, two bars per group (Chen vs. gated):
 %     valid-gaze fraction, mean pupil diameter, gaze dispersion, mean
-%     gaze speed.
+%     gaze speed. Also saved as data/images/figures/<write_comparison_
+%     fig> (a native MATLAB .fig, fully interactive when reopened), so
+%     matlab/plot_saved_gaze_behavior_comparison.m can display it later
+%     without re-reading any Tobii CSV.
 %   A numeric summary printed to the command window.
-%   No file is written; this script only reads the Tobii CSVs above.
 %
 % Method:
 %   Every metric comes directly from the raw Tobii CSV's normalized
@@ -39,6 +41,7 @@ close all;
 clc;
 
 script_directory = fileparts(mfilename('fullpath'));
+addpath(fullfile(script_directory, 'functions'));
 raw_data_directory = fullfile( ...
     script_directory, '..', 'data', 'raw_data', 'test_subjects');
 
@@ -51,12 +54,12 @@ chen_trials = struct( ...
     'shape', {'ellipse', 'ellipse', 'pear', 'pear', 'fine_gross', 'fine_gross'}, ...
     'bandwidth', {'narrow', 'wide', 'narrow', 'wide', 'narrow', 'wide'}, ...
     'gaze_csv_file', { ...
-        fullfile(raw_data_directory, 'tobii_chen_vac_2d_narrow_ellipse_shape_s21.csv'), ...
-        fullfile(raw_data_directory, 'tobii_chen_vac_2d_wide_ellipse_shape_s21.csv'), ...
-        fullfile(raw_data_directory, 'tobii_chen_vac_2d_narrow_pear_shape_s21.csv'), ...
-        fullfile(raw_data_directory, 'tobii_chen_vac_2d_wide_pear_shape_s21.csv'), ...
-        fullfile(raw_data_directory, 'tobii_chen_vac_2d_narrow_fine_gross_shape_s21.csv'), ...
-        fullfile(raw_data_directory, 'tobii_chen_vac_2d_wide_fine_gross_shape_s21.csv')});
+        fullfile(raw_data_directory, 'tobii_chen_vac_2d_narrow_ellipse_shape_s17.csv'), ...
+        fullfile(raw_data_directory, 'tobii_chen_vac_2d_wide_ellipse_shape_s17.csv'), ...
+        fullfile(raw_data_directory, 'tobii_chen_vac_2d_narrow_pear_shape_s17.csv'), ...
+        fullfile(raw_data_directory, 'tobii_chen_vac_2d_wide_pear_shape_s17.csv'), ...
+        fullfile(raw_data_directory, 'tobii_chen_vac_2d_narrow_fine_gross_shape_s17.csv'), ...
+        fullfile(raw_data_directory, 'tobii_chen_vac_2d_wide_fine_gross_shape_s17.csv')});
 chen_label = "Chen (baseline)";
 chen_color = [0.45, 0.45, 0.45];
 
@@ -65,14 +68,24 @@ gated_trials = struct( ...
     'shape', {'ellipse', 'ellipse', 'pear', 'pear', 'fine_gross', 'fine_gross'}, ...
     'bandwidth', {'narrow', 'wide', 'narrow', 'wide', 'narrow', 'wide'}, ...
     'gaze_csv_file', { ...
-        fullfile(raw_data_directory, 'tobii_gaze_assisted_chen_vac_2d_held_out_ellipse_and_s21_on_narrow_ellipse_shape.csv'), ...
-        fullfile(raw_data_directory, 'tobii_gaze_assisted_chen_vac_2d_held_out_ellipse_and_s21_on_wide_ellipse_shape.csv'), ...
-        fullfile(raw_data_directory, 'tobii_gaze_assisted_chen_vac_2d_held_out_pear_and_s21_on_narrow_pear_shape.csv'), ...
-        fullfile(raw_data_directory, 'tobii_gaze_assisted_chen_vac_2d_held_out_pear_and_s21_on_wide_pear_shape.csv'), ...
-        fullfile(raw_data_directory, 'tobii_gaze_assisted_chen_vac_2d_held_out_fine_gross_and_s21_on_narrow_fine_gross_shape.csv'), ...
-        fullfile(raw_data_directory, 'tobii_gaze_assisted_chen_vac_2d_held_out_fine_gross_and_s21_on_wide_fine_gross_shape.csv')});
+        fullfile(raw_data_directory, 'tobii_gaze_assisted_chen_vac_2d_held_out_ellipse_and_s17_on_narrow_ellipse_shape.csv'), ...
+        fullfile(raw_data_directory, 'tobii_gaze_assisted_chen_vac_2d_held_out_ellipse_and_s17_on_wide_ellipse_shape.csv'), ...
+        fullfile(raw_data_directory, 'tobii_gaze_assisted_chen_vac_2d_held_out_pear_and_s17_on_narrow_pear_shape.csv'), ...
+        fullfile(raw_data_directory, 'tobii_gaze_assisted_chen_vac_2d_held_out_pear_and_s17_on_wide_pear_shape.csv'), ...
+        fullfile(raw_data_directory, 'tobii_gaze_assisted_chen_vac_2d_held_out_fine_gross_and_s17_on_narrow_fine_gross_shape.csv'), ...
+        fullfile(raw_data_directory, 'tobii_gaze_assisted_chen_vac_2d_held_out_fine_gross_and_s17_on_wide_fine_gross_shape.csv')});
 gated_label = "Gaze-assisted (gated)";
 gated_color = [0.00, 0.45, 0.74];
+
+% TODO explicit output filename (data/images/figures/) for the Figure 1
+% comparison, saved as a native MATLAB .fig (via savefig(), not
+% exportgraphics() -- .fig is not one of exportgraphics' supported
+% formats). Rename this yourself when chen_trials/gated_trials change
+% subject, so a new run doesn't silently overwrite a previous one (no
+% auto-generated tag in the filename, per this project's convention).
+write_comparison_fig = fullfile(script_directory, '..', 'data', ...
+    'images', 'figures', 'compare_gaze_behavior_chen_vs_gated', ...
+    'gaze_behavior_chen_vs_gated_s17.fig');
 
 % TODO gaze validity gates, matching build_modality_feature_datasets.
 % py's own require_gaze_on_display / require_both_eyes_valid settings.
@@ -84,6 +97,8 @@ require_both_eyes_valid = true;
 % counted as one very large (or, divided by the long gap, misleadingly
 % slow) eye movement.
 max_gaze_gap_for_speed_s = 0.1;
+
+fprintf('Output: %s\n\n', write_comparison_fig);
 
 %% Validate the two trial lists describe the same cells, same order
 if numel(chen_trials) ~= numel(gated_trials)
@@ -141,7 +156,7 @@ for trial_idx = 1:trial_count
     gated_dispersion(trial_idx) = gated_metrics.gaze_dispersion;
     gated_speed(trial_idx) = gated_metrics.mean_gaze_speed_per_s;
 end
-fprintf('\n(No output file -- figure + command-window summary only.)\n\n');
+fprintf('\n');
 
 %% ================================================================
 % Figure 1: 4-panel grouped-bar comparison
@@ -168,6 +183,9 @@ plot_grouped_metric_bars(nexttile, chen_speed, gated_speed, ...
 
 sgtitle('Gaze behavior by (shape, bandwidth): Chen vs. gated');
 
+savefig(gcf, write_comparison_fig);
+fprintf('Wrote: %s\n\n', write_comparison_fig);
+
 %% ================================================================
 % Summary
 % =================================================================
@@ -186,151 +204,3 @@ fprintf('\n');
 
 %% ================================================================
 %% Local functions
-%% ================================================================
-
-function xy = parse_display_area_column(text_column)
-%PARSE_DISPLAY_AREA_COLUMN Parse a column of "[x,y]" strings (Tobii's
-% *_gaze_point_on_display_area cells) into an N-by-2 array, NaN rows
-% where the cell is unparseable (e.g. "[NaN,NaN]" during a dropout).
-
-    row_count = numel(text_column);
-    xy = nan(row_count, 2);
-    for row_idx = 1:row_count
-        text = strtrim(char(text_column(row_idx)));
-        text = strrep(strrep(text, '[', ''), ']', '');
-        parts = strsplit(text, ',');
-        if numel(parts) == 2
-            xy(row_idx, 1) = str2double(parts{1});
-            xy(row_idx, 2) = str2double(parts{2});
-        end
-    end
-end
-
-
-function metrics = compute_gaze_metrics(gaze_csv_file, ...
-        require_both_eyes_valid, require_gaze_on_display, ...
-        max_gaze_gap_for_speed_s)
-%COMPUTE_GAZE_METRICS Simple gaze-behavior summary for one trial, from
-% the raw Tobii CSV alone -- normalized display-area coordinates
-% ([0, 1] x [0, 1]), both eyes combined per require_both_eyes_valid.
-%
-% Output: scalar struct -- sample_count, valid_fraction,
-%   mean_pupil_diameter_mm, gaze_dispersion, mean_gaze_speed_per_s.
-
-    gaze_table = readtable(gaze_csv_file, 'Delimiter', ',', ...
-        'ReadVariableNames', true, 'VariableNamingRule', 'preserve', ...
-        'TextType', 'string');
-
-    time_s = gaze_table.time_s;
-    left_xy = parse_display_area_column( ...
-        gaze_table.left_gaze_point_on_display_area);
-    right_xy = parse_display_area_column( ...
-        gaze_table.right_gaze_point_on_display_area);
-    left_point_valid = gaze_table.left_gaze_point_validity == 1;
-    right_point_valid = gaze_table.right_gaze_point_validity == 1;
-
-    if require_gaze_on_display
-        left_on_display = all( ...
-            isfinite(left_xy) & left_xy >= 0 & left_xy <= 1, 2);
-        right_on_display = all( ...
-            isfinite(right_xy) & right_xy >= 0 & right_xy <= 1, 2);
-        left_point_valid = left_point_valid & left_on_display;
-        right_point_valid = right_point_valid & right_on_display;
-    end
-
-    row_count = height(gaze_table);
-    gaze_xy = nan(row_count, 2);
-    if require_both_eyes_valid
-        gaze_valid = left_point_valid & right_point_valid;
-        gaze_xy(gaze_valid, :) = 0.5 * ( ...
-            left_xy(gaze_valid, :) + right_xy(gaze_valid, :));
-    else
-        gaze_valid = left_point_valid | right_point_valid;
-        both = left_point_valid & right_point_valid;
-        only_left = left_point_valid & ~right_point_valid;
-        only_right = right_point_valid & ~left_point_valid;
-        gaze_xy(both, :) = 0.5 * (left_xy(both, :) + right_xy(both, :));
-        gaze_xy(only_left, :) = left_xy(only_left, :);
-        gaze_xy(only_right, :) = right_xy(only_right, :);
-    end
-
-    metrics.sample_count = row_count;
-    metrics.valid_fraction = mean(gaze_valid);
-
-    valid_xy = gaze_xy(gaze_valid, :);
-    valid_time_s = time_s(gaze_valid);
-    metrics.gaze_dispersion = mean(std(valid_xy, 0, 1));
-
-    if numel(valid_time_s) > 1
-        gaze_step = hypot(diff(valid_xy(:, 1)), diff(valid_xy(:, 2)));
-        time_step_s = diff(valid_time_s);
-        step_ok = time_step_s > 0 & time_step_s <= max_gaze_gap_for_speed_s;
-        metrics.mean_gaze_speed_per_s = ...
-            mean(gaze_step(step_ok) ./ time_step_s(step_ok));
-    else
-        metrics.mean_gaze_speed_per_s = NaN;
-    end
-
-    left_pupil_valid = gaze_table.left_pupil_validity == 1;
-    right_pupil_valid = gaze_table.right_pupil_validity == 1;
-    both_pupil_valid = left_pupil_valid & right_pupil_valid;
-    metrics.mean_pupil_diameter_mm = mean(0.5 * ( ...
-        gaze_table.left_pupil_diameter(both_pupil_valid) + ...
-        gaze_table.right_pupil_diameter(both_pupil_valid)));
-end
-
-
-function plot_grouped_metric_bars(ax, chen_values, gated_values, ...
-        group_labels, chen_label, gated_label, chen_color, gated_color, ...
-        y_label_text, title_text, value_format)
-%PLOT_GROUPED_METRIC_BARS One metric, one tile: N (shape, bandwidth)
-% groups, two colored bars per group (Chen vs. gated), each bar's mean
-% value printed above it. NaN entries (a missing cell) are simply not
-% drawn -- bar() skips them.
-
-    group_count = numel(chen_values);
-    values = [chen_values(:), gated_values(:)];
-
-    hold(ax, 'on');
-    bar_handle = bar(ax, values);
-    bar_handle(1).FaceColor = chen_color;
-    bar_handle(2).FaceColor = gated_color;
-    bar_handle(1).DisplayName = char(chen_label);
-    bar_handle(2).DisplayName = char(gated_label);
-
-    for group_idx = 1:group_count
-        for series_idx = 1:2
-            value = values(group_idx, series_idx);
-            if isnan(value)
-                continue;
-            end
-            text(ax, bar_handle(series_idx).XEndPoints(group_idx), ...
-                bar_handle(series_idx).YEndPoints(group_idx), ...
-                sprintf(value_format, value), ...
-                'HorizontalAlignment', 'center', ...
-                'VerticalAlignment', 'bottom', 'FontSize', 6);
-        end
-    end
-
-    set(ax, 'XTick', 1:group_count, 'XTickLabel', cellstr(group_labels), ...
-        'XTickLabelRotation', 20);
-    grid(ax, 'on');
-    ylabel(ax, y_label_text);
-    title(ax, title_text, 'FontSize', 9);
-    legend(ax, 'Location', 'best', 'FontSize', 7);
-end
-
-
-function print_gaze_row(name, chen_values, gated_values, group_labels, ...
-        value_format)
-%PRINT_GAZE_ROW One metric's rows: every group's Chen/gated values and
-% their difference.
-
-    fprintf('%s:\n', name);
-    for group_idx = 1:numel(group_labels)
-        fprintf(['  %-22s ' value_format ' ' value_format ' %+10.4g\n'], ...
-            char(group_labels(group_idx)), chen_values(group_idx), ...
-            gated_values(group_idx), ...
-            gated_values(group_idx) - chen_values(group_idx));
-    end
-end

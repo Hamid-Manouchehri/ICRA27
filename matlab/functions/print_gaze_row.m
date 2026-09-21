@@ -1,0 +1,13 @@
+function print_gaze_row(name, chen_values, gated_values, group_labels, ...
+        value_format)
+%PRINT_GAZE_ROW One metric's rows: every group's Chen/gated values and
+% their difference.
+
+    fprintf('%s:\n', name);
+    for group_idx = 1:numel(group_labels)
+        fprintf(['  %-22s ' value_format ' ' value_format ' %+10.4g\n'], ...
+            char(group_labels(group_idx)), chen_values(group_idx), ...
+            gated_values(group_idx), ...
+            gated_values(group_idx) - chen_values(group_idx));
+    end
+end

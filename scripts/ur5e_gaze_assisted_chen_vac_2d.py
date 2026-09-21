@@ -272,12 +272,12 @@ write_data_csv_path = (
     Path(__file__).resolve().parent.parent /
     "data" /
     "raw_data" /
-    # "ur5e_gaze_assisted_chen_vac_2d_held_out_pear_and_s14_on_narrow_pear_shape.csv"  # 2
-    # "ur5e_gaze_assisted_chen_vac_2d_held_out_fine_gross_and_s14_on_narrow_fine_gross_shape.csv"  # 5
-    # "ur5e_gaze_assisted_chen_vac_2d_held_out_ellipse_and_s14_on_narrow_ellipse_shape.csv"  # 4 
-    # "ur5e_gaze_assisted_chen_vac_2d_held_out_fine_gross_and_s14_on_wide_fine_gross_shape.csv"  # 3
-    # "ur5e_gaze_assisted_chen_vac_2d_held_out_pear_and_s14_on_wide_pear_shape.csv"  # 6
-    "ur5e_gaze_assisted_chen_vac_2d_held_out_ellipse_and_s14_on_wide_ellipse_shape.csv"  # 1
+    "ur5e_gaze_assisted_chen_vac_2d_held_out_pear_and_s23_on_narrow_pear_shape.csv"  # 2
+    # "ur5e_gaze_assisted_chen_vac_2d_held_out_fine_gross_and_s23_on_wide_fine_gross_shape.csv"  # 3
+    # "ur5e_gaze_assisted_chen_vac_2d_held_out_ellipse_and_s23_on_narrow_ellipse_shape.csv"  # 4 
+    # "ur5e_gaze_assisted_chen_vac_2d_held_out_fine_gross_and_s23_on_narrow_fine_gross_shape.csv"  # 5
+    # "ur5e_gaze_assisted_chen_vac_2d_held_out_ellipse_and_s23_on_wide_ellipse_shape.csv"  # 1
+    # "ur5e_gaze_assisted_chen_vac_2d_held_out_pear_and_s23_on_wide_pear_shape.csv"  # 6
 )
 
 # TODO Tobii output CSV path [file path]; one row per Tobii callback.
@@ -287,12 +287,12 @@ tobii_data_csv_path = (
     Path(__file__).resolve().parent.parent /
     "data" /
     "raw_data" /
-    # "tobii_gaze_assisted_chen_vac_2d_held_out_pear_and_s14_on_narrow_pear_shape.csv"  # 2
-    # "tobii_gaze_assisted_chen_vac_2d_held_out_fine_gross_and_s14_on_narrow_fine_gross_shape.csv"  # 5
-    # "tobii_gaze_assisted_chen_vac_2d_held_out_ellipse_and_s14_on_narrow_ellipse_shape.csv"  # 4
-    # "tobii_gaze_assisted_chen_vac_2d_held_out_fine_gross_and_s14_on_wide_fine_gross_shape.csv"  # 3
-    # "tobii_gaze_assisted_chen_vac_2d_held_out_pear_and_s14_on_wide_pear_shape.csv"  # 6
-    "tobii_gaze_assisted_chen_vac_2d_held_out_ellipse_and_s14_on_wide_ellipse_shape.csv"  # 1 
+    "tobii_gaze_assisted_chen_vac_2d_held_out_pear_and_s23_on_narrow_pear_shape.csv"  # 2
+    # "tobii_gaze_assisted_chen_vac_2d_held_out_fine_gross_and_s23_on_wide_fine_gross_shape.csv"  # 3
+    # "tobii_gaze_assisted_chen_vac_2d_held_out_ellipse_and_s23_on_narrow_ellipse_shape.csv"  # 4
+    # "tobii_gaze_assisted_chen_vac_2d_held_out_fine_gross_and_s23_on_narrow_fine_gross_shape.csv"  # 5
+    # "tobii_gaze_assisted_chen_vac_2d_held_out_ellipse_and_s23_on_wide_ellipse_shape.csv"  # 1 
+    # "tobii_gaze_assisted_chen_vac_2d_held_out_pear_and_s23_on_wide_pear_shape.csv"  # 6
 )
 
 # --- Classifier-gated damping bounds (the addition over Chen) ---
@@ -310,9 +310,13 @@ read_model_joblib_path = (
     Path(__file__).resolve().parent.parent /
     "data" /
     "models" /
-    "logistic_regression_held_out_ellipse_shape_and_s14_1win_ahead_W_1s.joblib"
-    # "logistic_regression_held_out_pear_shape_and_s14_1win_ahead_W_1s.joblib"
-    # "logistic_regression_held_out_fine_gross_shape_and_s14_1win_ahead_W_1s.joblib"
+    # "logistic_regression_held_out_ellipse_shape_and_s14_1win_ahead_W_1s.joblib"  # subject WAS part of training data
+    # "logistic_regression_held_out_fine_gross_shape_and_s14_1win_ahead_W_1s.joblib"  # subject WAS part of training data
+    # "logistic_regression_held_out_pear_shape_and_s14_1win_ahead_W_1s.joblib"  # subject WAS part of training data
+
+    # "logistic_regression_held_out_ellipse_shape_1win_ahead_W_1s.joblib"  # totally new subject
+    "logistic_regression_held_out_pear_shape_1win_ahead_W_1s.joblib"  # totally new subject
+    # "logistic_regression_held_out_fine_gross_shape_1win_ahead_W_1s.joblib"  # totally new subject
 )
 
 # TODO THIS session's Tobii -> CoppeliaSim/robot-base mapping, from
@@ -323,12 +327,12 @@ read_calibration_json_path = (
     Path(__file__).resolve().parent.parent /
     "data" /
     "calibrations" /
-    "tobii_coppelia_reference_calibration_wide_ellipse_shape_counter_clockwise_s14.json"
-    # "tobii_coppelia_reference_calibration_narrow_ellipse_shape_counter_clockwise_s14.json"
-    # "tobii_coppelia_reference_calibration_wide_pear_shape_counter_clockwise_s14.json"
-    # "tobii_coppelia_reference_calibration_narrow_pear_shape_counter_clockwise_s14.json"
-    # "tobii_coppelia_reference_calibration_wide_fine_gross_shape_counter_clockwise_s14.json"
-    # "tobii_coppelia_reference_calibration_narrow_fine_gross_shape_counter_clockwise_s14.json"
+    # "tobii_coppelia_reference_calibration_wide_ellipse_shape_counter_clockwise_s23.json"
+    # "tobii_coppelia_reference_calibration_narrow_ellipse_shape_counter_clockwise_s23.json"
+    # "tobii_coppelia_reference_calibration_wide_pear_shape_counter_clockwise_s23.json"
+    "tobii_coppelia_reference_calibration_narrow_pear_shape_counter_clockwise_s23.json"
+    # "tobii_coppelia_reference_calibration_wide_fine_gross_shape_counter_clockwise_s23.json"
+    # "tobii_coppelia_reference_calibration_narrow_fine_gross_shape_counter_clockwise_s23.json"
 )
 
 # TODO damping bounds [N s/m] per predicted class, each low < high.
