@@ -110,7 +110,7 @@
 %   that script's write_csv_header().
 
 clear;
-% close all;
+close all;
 clc;
 
 script_directory = fileparts(mfilename('fullpath'));
@@ -118,13 +118,13 @@ script_directory = fileparts(mfilename('fullpath'));
 %% User Settings
 % TODO controller log to label, written by scripts/ur5e_chen_var_adm_2d.py.
 read_robot_csv_file = fullfile( ...
-    script_directory, '..', 'data', 'raw_data', ...
-    'ur5e_chen_var_adm_2d_narrow_ellipse_shape_counter_clockwise_s17.csv');
+    script_directory, '..', 'data', 'raw_data', 'old_data', ...
+    'ur5e_chen_var_adm_2d_fine_gross_shape_counter_clockwise_s0.csv');
 
 % TODO matching gaze log from the same trial (same time_s origin).
 read_gaze_csv_file = fullfile( ...
-    script_directory, '..', 'data', 'raw_data', ...
-    'tobii_chen_var_adm_2d_narrow_ellipse_shape_counter_clockwise_s17.csv');
+    script_directory, '..', 'data', 'raw_data', 'old_data', ...
+    'tobii_chen_var_adm_2d_fine_gross_shape_counter_clockwise_s0.csv');
 
 % TODO calibration JSON mapping Tobii UCS to the CoppeliaSim frame for
 % this subject/shape, used only to overlay gaze on the TCP path plot

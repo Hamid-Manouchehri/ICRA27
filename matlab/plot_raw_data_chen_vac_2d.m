@@ -13,7 +13,7 @@
 %   Figure 1: TCP path in the CoppeliaSim x-y frame, colored by the
 %   applied isotropic damping b_d, with intended-direction arrows and an
 %   optional raw-gaze overlay.
-%   Figure 2: direct intention, paper Eq. (7). Force magnitude against
+%   Figure 2: direct inte6ntion, paper Eq. (7). Force magnitude against
 %   the [force_min_n, force_max_n] band, and the desired versus
 %   rate-limited applied damping against the [damping_min, damping_max]
 %   band.
@@ -200,7 +200,7 @@ animation_trail_s = 1.5;
 % raw, jittery gaze position reads as a transient dot while a detected
 % fixation reads as the more significant event.
 replay_gaze_point_marker_size = 10;
-replay_gaze_point_color = 'g';
+replay_gaze_point_color = 'k';
 
 % TODO Figure 12 oldest a raw gaze sample may be and still be shown as
 % "current" [s], positive. Prevents the real-time gaze dot from freezing
@@ -208,12 +208,18 @@ replay_gaze_point_color = 'g';
 % instead once no sample this recent exists.
 replay_gaze_point_max_age_s = 0.15;
 
+% TODO Figure 12 accumulated gaze trace: every raw gaze sample up to the
+% current replay time stays on the shape. Smaller and faded so the trace
+% reads as history behind the bright real-time dot.
+replay_gaze_trace_marker_size = 4;
+replay_gaze_trace_alpha = 1.0;
+
 % TODO Figure 12 fixation marker size [points^2] and color, intentionally
 % separate from fixation_marker_size/fixation_marker_color (Figure 1)
 % so this replay's fixations can be styled differently (bigger, red)
 % without changing Figure 1.
 replay_fixation_marker_size = 60;
-replay_fixation_marker_color = 'r';
+replay_fixation_marker_color = 'y';
 
 % TODO I-VT angular-velocity threshold [deg/s] and minimum retained
 % fixation duration [s] for the gaze panel. Matches
@@ -900,6 +906,10 @@ if animate_evolution
     tcp_marker_handle = plot(path_axes, NaN, NaN, 'o', ...
         'MarkerSize', 7, 'MarkerFaceColor', [0.85, 0.20, 0.10], ...
         'MarkerEdgeColor', 'k', 'DisplayName', 'TCP now');
+    gaze_trace_handle = scatter(path_axes, NaN, NaN, ...
+        replay_gaze_trace_marker_size, replay_gaze_point_color, ...
+        'filled', 'MarkerFaceAlpha', replay_gaze_trace_alpha, ...
+        'DisplayName', 'Gaze so far');
     gaze_point_handle = scatter(path_axes, NaN, NaN, ...
         replay_gaze_point_marker_size, replay_gaze_point_color, ...
         'filled', 'DisplayName', 'Real-time gaze point');
@@ -927,7 +937,7 @@ if animate_evolution
     ylim(path_axes, [min(all_y_m) - view_pad_m, max(all_y_m) + view_pad_m]);
     xlabel(path_axes, 'CoppeliaSim x [m]');
     ylabel(path_axes, 'CoppeliaSim y [m]');
-    legend(path_axes, 'Location', 'best', 'FontSize', 7);
+    legend(path_axes, 'Location', 'eastoutside', 'FontSize', 7);
 
     % ---- Top-right tile: damping against time
     damping_axes = nexttile;
@@ -1051,6 +1061,11 @@ if animate_evolution
             % lookahead). Hidden instead of frozen when the newest such
             % sample is older than replay_gaze_point_max_age_s, e.g.
             % during a gaze-tracking dropout.
+            gaze_shown_mask = raw_gaze_time_s <= now_s;
+            set(gaze_trace_handle, ...
+                'XData', raw_gaze_xy_m(gaze_shown_mask, 1), ...
+                'YData', raw_gaze_xy_m(gaze_shown_mask, 2));
+
             gaze_now_idx = find(raw_gaze_time_s <= now_s, 1, 'last');
             gaze_is_current = ~isempty(gaze_now_idx) && ...
                 now_s - raw_gaze_time_s(gaze_now_idx) <= ...

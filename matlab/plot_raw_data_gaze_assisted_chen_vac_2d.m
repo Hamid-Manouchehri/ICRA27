@@ -84,7 +84,7 @@ write_image_directory = fullfile(script_directory, '..', 'data', ...
 % under data/raw_data/test_subjects/, data/calibrations/, and
 % data/shapes/ as of this writing.
 bandwidth_label = "narrow";    % TODO 'narrow' or 'wide'
-shape_name = "ellipse";        % TODO 'ellipse', 'pear', or 'fine_gross'
+shape_name = "pear";        % TODO 'ellipse', 'pear', or 'fine_gross'
 subject_id = "s11";            % TODO trial subject, e.g. "s11"
 
 % Calibration filenames don't all carry a direction token (a handful of
