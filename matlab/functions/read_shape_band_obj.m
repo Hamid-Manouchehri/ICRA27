@@ -135,13 +135,31 @@ outer_xy_m = resample_closed_loop( ...
 inner_xy_m = resample_closed_loop( ...
     loops{inner_index}, resample_spacing_m);
 
-centre_xy_m = zeros(size(outer_xy_m));
-for sample_idx = 1:size(outer_xy_m, 1)
-    distances_m = hypot( ...
-        inner_xy_m(:, 1) - outer_xy_m(sample_idx, 1), ...
-        inner_xy_m(:, 2) - outer_xy_m(sample_idx, 2));
-    [~, nearest_index] = min(distances_m);
-    centre_xy_m(sample_idx, :) = 0.5 * ( ...
-        outer_xy_m(sample_idx, :) + inner_xy_m(nearest_index, :));
+% Pair outer/inner points by POSITION ALONG THE LOOP (arc-length
+% fraction), not by nearest spatial point. Nearest-point pairing jumps
+% across neighboring folds on a tightly wound band (e.g. a zigzag
+% region), which corrupts the centerline exactly there.
+n_outer = size(outer_xy_m, 1);
+n_inner = size(inner_xy_m, 1);
+
+% The two loops can be traced in opposite rotational directions --
+% flip inner to match outer if their signed (shoelace) areas disagree.
+outer_signed_area = 0.5 * sum(outer_xy_m(:, 1) .* circshift(outer_xy_m(:, 2), -1) - ...
+    circshift(outer_xy_m(:, 1), -1) .* outer_xy_m(:, 2));
+inner_signed_area = 0.5 * sum(inner_xy_m(:, 1) .* circshift(inner_xy_m(:, 2), -1) - ...
+    circshift(inner_xy_m(:, 1), -1) .* inner_xy_m(:, 2));
+if sign(outer_signed_area) ~= sign(inner_signed_area)
+    inner_xy_m = flipud(inner_xy_m);
 end
+
+% Align starting phase: rotate inner so its index 1 is the point
+% nearest outer's index 1 (a single nearest-point lookup, not one per
+% sample, so it can't jump folds).
+distance_to_outer_start = hypot(inner_xy_m(:, 1) - outer_xy_m(1, 1), ...
+    inner_xy_m(:, 2) - outer_xy_m(1, 2));
+[~, phase_offset] = min(distance_to_outer_start);
+inner_xy_m = circshift(inner_xy_m, 1 - phase_offset);
+
+matched_inner_idx = mod(round((0:n_outer - 1)' / n_outer * n_inner), n_inner) + 1;
+centre_xy_m = 0.5 * (outer_xy_m + inner_xy_m(matched_inner_idx, :));
 end

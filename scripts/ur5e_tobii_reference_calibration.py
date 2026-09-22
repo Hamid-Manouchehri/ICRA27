@@ -55,12 +55,12 @@ calibration_json_path = (
     Path(__file__).resolve().parent.parent
     / "data"
     / "calibrations"
-    # / "tobii_coppelia_reference_calibration_narrow_fine_gross_shape_counter_clockwise_s23.json"
-    # / "tobii_coppelia_reference_calibration_wide_fine_gross_shape_counter_clockwise_s23.json"
-    # / "tobii_coppelia_reference_calibration_narrow_ellipse_shape_counter_clockwise_s23.json"
-    # / "tobii_coppelia_reference_calibration_wide_ellipse_shape_counter_clockwise_s23.json"
-    # / "tobii_coppelia_reference_calibration_narrow_pear_shape_counter_clockwise_s23.json"
-    # / "tobii_coppelia_reference_calibration_wide_pear_shape_counter_clockwise_s23.json"
+    # / "tobii_coppelia_reference_calibration_narrow_fine_gross_shape_counter_clockwise_s24.json"
+    # / "tobii_coppelia_reference_calibration_wide_fine_gross_shape_counter_clockwise_s24.json"
+    # / "tobii_coppelia_reference_calibration_narrow_ellipse_shape_counter_clockwise_s24.json"
+    # / "tobii_coppelia_reference_calibration_wide_ellipse_shape_counter_clockwise_s24.json"
+    # / "tobii_coppelia_reference_calibration_narrow_pear_shape_counter_clockwise_s24.json"
+    # / "tobii_coppelia_reference_calibration_wide_pear_shape_counter_clockwise_s24.json"
     / "tobii_coppelia_reference_calibration_test.json"
 )
 
