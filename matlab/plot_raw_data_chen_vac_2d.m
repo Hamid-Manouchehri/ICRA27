@@ -92,12 +92,12 @@ addpath(fullfile(script_directory, 'functions'));
 % TODO controller log written by scripts/ur5e_chen_var_adm_2d.py.
 robot_csv_file = fullfile( ...
     script_directory, '..', 'data', 'raw_data', ...
-    'ur5e_chen_vac_2d_wide_pear_shape.csv');
+    'ur5e_chen_var_adm_2d_wide_fine_gross_shape_clockwise_s18.csv');
 
 % TODO matching gaze log from the same trial (same time_s origin).
 gaze_csv_file = fullfile( ...
     script_directory, '..', 'data', 'raw_data', ...
-    'tobii_chen_vac_2d_wide_pear_shape.csv');
+    'tobii_chen_var_adm_2d_wide_fine_gross_shape_clockwise_s18.csv');
 
 % TODO true overlays gaze on the TCP path and draws the gaze figure.
 % Set false to skip every gaze panel, e.g. for a trial recorded without
@@ -110,7 +110,7 @@ plot_gaze_overlay = true;
 % controller diagnostics need no calibration.
 calibration_json_file = fullfile( ...
     script_directory, '..', 'data', 'calibrations', ...
-    'tobii_coppelia_reference_calibration_wide_pear_shape_clockwise_s14.json');
+    'tobii_coppelia_reference_calibration_wide_fine_gross_shape_clockwise_s18.json');
 
 % TODO these must match the User Settings of the Python controller that
 % produced the CSV. They are only drawn as reference lines; the script
@@ -139,7 +139,7 @@ beta_max = 2.0 / 3.0;
 % {wide,narrow}_pear_shape.obj, {wide,narrow}_teeth_ellipse_shape.obj
 shape_obj_file = fullfile( ...
     script_directory, '..', 'data', 'shapes', ...
-    'wide_pear_shape.obj');
+    'wide_fine_gross_shape.obj');
 
 % TODO translation from the mesh CAD frame to the CoppeliaSim frame [m].
 % VERIFY THIS before trusting the accuracy number: it sets where the
@@ -151,8 +151,8 @@ shape_obj_file = fullfile( ...
 % so a bad registration is visible rather than silent.
 % current shapes offsets:
 % shape_offset_xy_m = [-0.015, -0.650];  % narrow/wide_ellipse_shape
-shape_offset_xy_m = [0.025, -0.660];  % narrow/wide_pear_shape
-% shape_offset_xy_m = [-0.0, -0.650];  % narrow/wide_fine_gross_shape
+% shape_offset_xy_m = [0.025, -0.66     0];  % narrow/wide_pear_shape
+shape_offset_xy_m = [-0.0, -0.650];  % narrow/wide_fine_gross_shape
 
 % TODO spacing used to resample the reference path [m], positive. The
 % error is the distance to the nearest reference sample, so this sets
@@ -184,7 +184,7 @@ animate_evolution = true;
 % TODO replay every Nth control sample [count], positive. At 500 Hz a
 % stride of 10 replays 50 frames per trial second. Larger is faster and
 % coarser.
-animation_stride = 40;
+animation_stride = 50;
 
 % TODO pause between replay frames [s], >= 0. Set 0 to replay as fast as
 % the figure can redraw.
