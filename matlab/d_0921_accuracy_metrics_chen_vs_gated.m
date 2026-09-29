@@ -57,7 +57,7 @@ for k = 1:2
     vy = T.tcp_vy_actual_m_s;
     t = T.time_s;
 
-    [d, path_angle, nearest_index] = nearest_centerline_distance_and_heading(x, y, center);
+    [d, path_angle, centerline_position] = nearest_centerline_distance_and_heading(x, y, center);
 
     tcp_angle = atan2(vy, vx);  % TCP pose taken as direction of travel (no orientation column logged)
     ang_div = signed_angle_difference(tcp_angle, path_angle);
@@ -71,7 +71,7 @@ for k = 1:2
     d_stats = summarize_distribution(1e3 * d);  % [mm]
     ang_stats = summarize_distribution(abs(rad2deg(ang_div)));  % [deg]
 
-    d_norm = normalized_corridor_distance(d, nearest_index, half_w);
+    d_norm = normalized_corridor_distance(d, centerline_position, half_w);
     d_norm_stats = summarize_distribution(d_norm);  % fraction of corridor half-width
 
     in_band_percent = in_band_accuracy(d_norm);

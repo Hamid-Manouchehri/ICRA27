@@ -97,7 +97,7 @@ for i = 1:n_trials
     %% ------------------------------------------------------------
     % Centerline tracking
     % -------------------------------------------------------------
-    [distance_m, path_angle, nearest_index] = ...
+    [distance_m, path_angle, centerline_position] = ...
         nearest_centerline_distance_and_heading( ...
         x, y, center);
 
@@ -114,7 +114,7 @@ for i = 1:n_trials
     % Corridor-normalized accuracy
     % -------------------------------------------------------------
     d_norm = normalized_corridor_distance( ...
-        distance_m, nearest_index, half_width);
+        distance_m, centerline_position, half_width);
 
     in_band_percent = ...
         100 * mean(d_norm <= 1);

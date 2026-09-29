@@ -111,12 +111,12 @@ for i = 1:n_trials
     vy = T.tcp_vy_actual_m_s;
     t  = T.time_s;
 
-    [d, path_angle, nearest_index] = nearest_centerline_distance_and_heading(x, y, center);
+    [d, path_angle, centerline_position] = nearest_centerline_distance_and_heading(x, y, center);
 
     tcp_angle = atan2(vy, vx);  % TCP pose taken as direction of travel (no orientation column logged)
     ang_div = signed_angle_difference(tcp_angle, path_angle);
 
-    d_norm = normalized_corridor_distance(d, nearest_index, half_w);
+    d_norm = normalized_corridor_distance(d, centerline_position, half_w);
 
     time_s{i} = t;
     tcp_xy_m{i} = [x, y];
