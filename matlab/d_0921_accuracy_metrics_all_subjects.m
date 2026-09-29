@@ -1,4 +1,4 @@
-%% Per-trial tracking time series for every trial in the manifest, saved to a .mat.
+%% Per-trial tracking metrics for every trial in the manifest, saved as one table.
 % Same geometry and metric functions as d_0921_tracking_metrics_chen_vs_gated.m, no plots.
 %
 % Inputs:
@@ -7,14 +7,16 @@
 %   - data/shapes/<shape_obj> (per manifest row)
 %
 % Outputs:
-%   - data/processed_data/tracking_metrics_all_subjects.mat, N trials:
-%     subject_id, trial, controller_index, shape_index, bandwidth_index,
-%     direction_index (N-by-1) plus the four *_label_L code lists;
-%     time_s, tcp_x_m, tcp_y_m, tcp_vx_m_s, tcp_vy_m_s,
-%     dist_to_centerline_m, dist_to_centerline_norm,
-%     angular_divergence_rad, dist_rate_m_s,
-%     angular_divergence_rate_rad_s (N-by-samples_per_trial);
-%     in_band_percent (N-by-1); boundary_violation (N-by-1 struct)
+%   - data/processed_data/accuracy_metrics_exploration_all_subjects.mat:
+%     trial_metrics, an N-by-19 table, one row per trial --
+%       numeric columns: subject_id, trial, controller_index, shape_index,
+%         bandwidth_index, direction_index, in_band_percent,
+%         violation_mean_excess_overall, violation_mean_excess_when_outside,
+%         violation_max_excess, violation_sample_count
+%       cell columns (one vector/matrix per trial): time_s, tcp_xy_m,
+%         tcp_v_xy_m_s, dist_to_centerline_m, dist_to_centerline_norm,
+%         angular_divergence_rad, dist_rate_m_s, angular_divergence_rate_rad_s
+%     plus the four *_label_L lists that decode the *_index columns
 %
 % Depends on:
 %   - trial_manifest.csv
@@ -26,7 +28,7 @@
 %   - functions/in_band_accuracy.m
 %   - functions/boundary_violation_magnitude.m
 
-clc; 
+clc;
 clear;
 close all;
 
@@ -41,8 +43,6 @@ raw_data_directory = fullfile(data_directory, 'raw_data', 'test_subjects');
 shape_directory = fullfile(data_directory, 'shapes');
 
 reference_spacing_m = 5e-4;  % TODO centerline resample spacing [m]
-
-samples_per_trial = 30000;  % TODO rows in every robot CSV; another length errors when stored
 
 % TODO code lists: each trial is saved as its 1-based index into these.
 % shape/bandwidth order matches ET.m, so codes line up with ET_data.mat.
@@ -73,11 +73,12 @@ trial = M.trial;
 assert(all([controller_index; shape_index; bandwidth_index; direction_index] > 0), ...
     'A manifest label is missing from its code list in User Setting.');
 
-[time_s, tcp_x_m, tcp_y_m, tcp_vx_m_s, tcp_vy_m_s, ...
-    dist_to_centerline_m, dist_to_centerline_norm, angular_divergence_rad, ...
-    dist_rate_m_s, angular_divergence_rate_rad_s] = ...
-    deal(nan(n_trials, samples_per_trial));
-in_band_percent = nan(n_trials, 1);
+[time_s, tcp_xy_m, tcp_v_xy_m_s, dist_to_centerline_m, ...
+    dist_to_centerline_norm, angular_divergence_rad, dist_rate_m_s, ...
+    angular_divergence_rate_rad_s] = deal(cell(n_trials, 1));
+[in_band_percent, violation_mean_excess_overall, ...
+    violation_mean_excess_when_outside, violation_max_excess, ...
+    violation_sample_count] = deal(nan(n_trials, 1));
 
 % Shape geometry (centerline + local corridor half-width) depends only
 % on shape_obj, not on subject/controller -- cached so each distinct
@@ -117,27 +118,32 @@ for i = 1:n_trials
 
     d_norm = normalized_corridor_distance(d, nearest_index, half_w);
 
-    time_s(i, :) = t';
-    tcp_x_m(i, :) = x';
-    tcp_y_m(i, :) = y';
-    tcp_vx_m_s(i, :) = vx';
-    tcp_vy_m_s(i, :) = vy';
-    dist_to_centerline_m(i, :) = d';
-    dist_to_centerline_norm(i, :) = d_norm';
-    angular_divergence_rad(i, :) = ang_div';
-    dist_rate_m_s(i, :) = rate_of_change(d, t)';
-    angular_divergence_rate_rad_s(i, :) = rate_of_change(ang_div, t)';
+    time_s{i} = t;
+    tcp_xy_m{i} = [x, y];
+    tcp_v_xy_m_s{i} = [vx, vy];
+    dist_to_centerline_m{i} = d;
+    dist_to_centerline_norm{i} = d_norm;
+    angular_divergence_rad{i} = ang_div;
+    dist_rate_m_s{i} = rate_of_change(d, t);
+    angular_divergence_rate_rad_s{i} = rate_of_change(ang_div, t);
+
     in_band_percent(i) = in_band_accuracy(d_norm);
-    boundary_violation(i) = boundary_violation_magnitude(d_norm);
+    violation = boundary_violation_magnitude(d_norm);
+    violation_mean_excess_overall(i) = violation.mean_excess_overall;
+    violation_mean_excess_when_outside(i) = violation.mean_excess_when_outside;
+    violation_max_excess(i) = violation.max_excess;
+    violation_sample_count(i) = violation.sample_count;
 end
 
-save(write_metrics_mat, ...
-    'subject_id', 'trial', 'controller_index', 'shape_index', ...
-    'bandwidth_index', 'direction_index', ...
-    'controller_label_L', 'shape_name_L', 'bandwidth_label_L', 'direction_label_L', ...
-    'time_s', 'tcp_x_m', 'tcp_y_m', 'tcp_vx_m_s', 'tcp_vy_m_s', ...
-    'dist_to_centerline_m', 'dist_to_centerline_norm', 'angular_divergence_rad', ...
-    'dist_rate_m_s', 'angular_divergence_rate_rad_s', ...
-    'in_band_percent', 'boundary_violation');
+trial_metrics = table( ...
+    subject_id, trial, controller_index, shape_index, bandwidth_index, ...
+    direction_index, in_band_percent, violation_mean_excess_overall, ...
+    violation_mean_excess_when_outside, violation_max_excess, ...
+    violation_sample_count, time_s, tcp_xy_m, tcp_v_xy_m_s, ...
+    dist_to_centerline_m, dist_to_centerline_norm, angular_divergence_rad, ...
+    dist_rate_m_s, angular_divergence_rate_rad_s);
+
+save(write_metrics_mat, 'trial_metrics', 'controller_label_L', ...
+    'shape_name_L', 'bandwidth_label_L', 'direction_label_L');
 
 fprintf('\nSaved %d trials:\n%s\n', n_trials, write_metrics_mat);
