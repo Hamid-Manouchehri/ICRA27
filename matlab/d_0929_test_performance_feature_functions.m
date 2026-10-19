@@ -158,15 +158,18 @@ angle_rad(end) = [];
 centerline_xy_m = [radius_m * cos(angle_rad), radius_m * sin(angle_rad)];
 phi_rad = linspace(0, 3 * 2 * pi, 6000)';   % 3 laps
 
-[efficiency, progress_m] = path_efficiency_fun(radius_m * cos(phi_rad), radius_m * sin(phi_rad), centerline_xy_m);
+[efficiency, progress_m] = path_efficiency_fun(radius_m * cos(phi_rad), ...
+    radius_m * sin(phi_rad), centerline_xy_m);
 fprintf('on the centerline: efficiency got %.4f (expected 1), progress %.4f m (expected 3*2*pi*R = %.4f)\n', ...
     efficiency, progress_m, 3 * 2 * pi * radius_m);
 
 wobble_m = 0.003 * sin(40 * phi_rad);
-efficiency = path_efficiency_fun((radius_m + wobble_m) .* cos(phi_rad), (radius_m + wobble_m) .* sin(phi_rad), centerline_xy_m);
+efficiency = path_efficiency_fun((radius_m + wobble_m) .* cos(phi_rad), ...
+    (radius_m + wobble_m) .* sin(phi_rad), centerline_xy_m);
 fprintf('3 mm wobble: efficiency got %.4f, expected about 0.77 (lower than 1)\n', efficiency);
 
-efficiency = path_efficiency_fun(radius_m * cos(-phi_rad), radius_m * sin(-phi_rad), centerline_xy_m);
+efficiency = path_efficiency_fun(radius_m * cos(-phi_rad), radius_m * sin(-phi_rad), ...
+    centerline_xy_m);
 fprintf('same laps the other way round: got %.4f, expected 1 (direction does not matter)\n', efficiency);
 
 %% boundary_violations_fun: complete out-and-back excursions of at least min_duration_s

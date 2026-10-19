@@ -12,6 +12,8 @@
 %   matlab/paper_fig4_lead_time.m
 %   matlab/paper_fig5_chen_auc.m
 
+clc; clear; close all
+
 fprintf("build_all_paper_figures.m: running all paper_fig*.m scripts\n");
 scripts_to_run = ["paper_fig3_accuracy", "paper_fig4_lead_time", ...
     "paper_fig5_chen_auc"];

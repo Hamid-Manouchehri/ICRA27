@@ -87,8 +87,8 @@ write_image_directory = fullfile(script_directory, '..', 'data', ...
 % this writing (the "_and_s<id>_" leave-one-subject-out CSVs; a few
 % differently-named bundles also exist there, e.g. "..._shape_robot_
 % W_1s_...", and are NOT reachable through this block).
-shape_name = "fine_gross";           % TODO 'ellipse', 'pear', or 'fine_gross'
-held_out_subject_id = "s13";         % TODO subject held out of training
+shape_name = "pear";           % TODO 'ellipse', 'pear', or 'fine_gross'
+held_out_subject_id = "s14";         % TODO subject held out of training
 prediction_horizon_label = "1win_ahead";  % TODO must match train_
                                            % logistic_regression.py's
                                            % own filename tokens
