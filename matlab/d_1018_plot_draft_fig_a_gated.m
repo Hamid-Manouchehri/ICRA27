@@ -31,7 +31,7 @@ bandwidth_name = "wide";  % wide, narrow
 subject_id = 18;  % participant shown
 lap_number = 2;  % lap shown (1 = first lap from the start)
 
-bin_size_m = 0.001;  % map grid spacing [m]
+bin_size_m = 0.0003;  % map grid spacing (pixel size) [m]
 smoothing_sigma_m = 0.003;  % Gaussian smoothing width [m]
 margin_m = 0.02;  % map extent beyond the corridor's outer edge [m]
 force_color_limits_n = [2, 7];  % |F| map color range [N]
@@ -82,11 +82,10 @@ x_centers_m = x_edges_m(1:end - 1) + bin_size_m / 2;
 y_centers_m = y_edges_m(1:end - 1) + bin_size_m / 2;
 grid_size = [numel(y_centers_m), numel(x_centers_m)];
 
-% Gaussian kernel out to 3 sigma.
+% Gaussian kernel out to 3 sigma, applied along y then x (separable).
 kernel_half_width = ceil(3 * smoothing_sigma_m / bin_size_m);
 g = exp(-0.5 * ((-kernel_half_width:kernel_half_width) * bin_size_m / ...
     smoothing_sigma_m).^2);
-kernel = g' * g;
 
 % Grid cells inside the corridor (inside the outer edge, outside the inner).
 [x_grid_m, y_grid_m] = meshgrid(x_centers_m, y_centers_m);
@@ -102,13 +101,13 @@ in_grid = ~isnan(ix) & ~isnan(iy) & T.classifier_update_count > 0;
 bin = [iy(in_grid), ix(in_grid)];
 
 % Gaussian-weighted mean: smooth the per-cell sums and counts, divide.
-weight = conv2(accumarray(bin, 1, grid_size), kernel, 'same');
-pt_map = conv2(accumarray(bin, T.fine_probability(in_grid), grid_size), ...
-    kernel, 'same') ./ weight;
-bd_map = conv2(accumarray(bin, T.bd_applied_Ns_m(in_grid), grid_size), ...
-    kernel, 'same') ./ weight;
-force_map = conv2(accumarray(bin, force_n(in_grid), grid_size), ...
-    kernel, 'same') ./ weight;
+weight = conv2(g, g, accumarray(bin, 1, grid_size), 'same');
+pt_map = conv2(g, g, accumarray(bin, T.fine_probability(in_grid), ...
+    grid_size), 'same') ./ weight;
+bd_map = conv2(g, g, accumarray(bin, T.bd_applied_Ns_m(in_grid), ...
+    grid_size), 'same') ./ weight;
+force_map = conv2(g, g, accumarray(bin, force_n(in_grid), grid_size), ...
+    'same') ./ weight;
 
 % Fill the corridor: each cell takes the value at its nearest lap sample,
 % so each sample's color spans the corridor across its direction of travel.
@@ -147,6 +146,7 @@ for j = 1:3
     clim(color_limits{j});
     cb = colorbar('southoutside');
     cb.Label.String = map_labels(j);
+    colormap(gca, 'parula')
     % title({sprintf('%s, Gaussian \\sigma = %g mm', map_labels(j), ...
     %     1000 * smoothing_sigma_m), sprintf('Gated, s%d, %s, lap %d', ...
     %     subject_id, condition_label, lap_number)});
