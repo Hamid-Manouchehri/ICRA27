@@ -287,7 +287,7 @@ tobii_data_csv_path = (
     Path(__file__).resolve().parent.parent /
     "data" /
     "raw_data" /
-    "tobii_gaze_assisted_chen_vac_2d_held_out_pear_and_s23_on_narrow_pear_shape.csv"  # 2
+    "tobii_gaze_assisted_chen_vac_2d_held_out_pear_and_s24_on_narrow_pear_shape.csv"  # 2
     # "tobii_gaze_assisted_chen_vac_2d_held_out_fine_gross_and_s24_on_wide_fine_gross_shape.csv"  # 3
     # "tobii_gaze_assisted_chen_vac_2d_held_out_ellipse_and_s24_on_narrow_ellipse_shape.csv"  # 4
     # "tobii_gaze_assisted_chen_vac_2d_held_out_fine_gross_and_s24_on_narrow_fine_gross_shape.csv"  # 5
